@@ -21,7 +21,12 @@ package mrmc.core;
 import java.util.*;
 import java.io.*;
 
+import javax.swing.JFrame;
+import javax.swing.JOptionPane;
+
 import mrmc.chart.XYPair;
+import mrmc.gui.GUInterface;
+import mrmc.gui.SizePanel;
 
 
 /**
@@ -58,6 +63,14 @@ public class InputFile {
 	TreeMap<String, TreeMap<String, TreeMap<String, Double>>> 
 		keyedData = new TreeMap<String, TreeMap<String, TreeMap<String, Double>>>();
 	/**
+	 * Contains counts for normal and disease cases for each modality and reader
+	 */
+	public TreeMap<String, TreeMap<String,Integer[]>> casecount= new  TreeMap<String, TreeMap<String,Integer[]>>();       //modality<reader,count[][]>;
+	/**
+	 * Contains reader, normal cases and disease cases list for each modality
+	 */
+    final TreeMap<String, TreeMap<String,ArrayList<String>>> modinformation =new  TreeMap<String, TreeMap<String,ArrayList<String>>>();
+	/**
 	 *  Contains the truth status for each case organized as a TreeMap (Case, Score)
 	 */
 	TreeMap<String, Integer> 
@@ -87,12 +100,18 @@ public class InputFile {
 	 * A sorted tree (list) containing all the modalityIDs in the data (IDs of the modalities)
 	 */
 	public TreeMap<String, Integer> modalityIDs = new TreeMap<String, Integer>();
-		
+	
 	/**
 	 * Filename for the .imrmc reader study data
 	 */
 	public String filename;
+	public SizePanel SizePanel1;
 	/**
+	 * to do
+	 */
+	private GUInterface GUI;
+	private DBRecord DBRecordStat;
+	/*
 	 * 
 	 */
 	ArrayList<String> fileContent = new ArrayList<String>();
@@ -107,7 +126,19 @@ public class InputFile {
 	 */
 	int filePosition;
 	/**
-	 * The number of rows in .imrmc reader study data file before "BEGIN DATA:"
+	 * The row being read from .imrmc summary file 
+	 */
+	int summaryPosition;
+	/**
+	 * The number of rows in .imrmc reader study data file before "BEGIN SUMMARY:"
+	 */
+	int beginSummaryPosition = 0;
+	/**
+	 * The number of rows in .imrmc reader study data file before "END SUMMARY:"
+	 */
+	int endSummaryPosition = 0;
+	/**
+	 * The last line of the .imrmc summary data
 	 */
 	public int NrowsInHeader = 0;	
 	/**
@@ -287,7 +318,6 @@ public class InputFile {
 	public TreeMap<String, TreeMap<String, TreeSet<XYPair>>> generateROCpoints(String[] modchosen) {
 		int samples = 100;
 		TreeMap<String, TreeMap<String, TreeSet<XYPair>>> allrocPoints = new TreeMap<String, TreeMap<String, TreeSet<XYPair>>>(); 
-
 		for (String mod :modchosen){
 			TreeMap<String, TreeSet<XYPair>> rocPoints = new TreeMap<String, TreeSet<XYPair>>();
 			double min = getMinScore(mod);
@@ -320,12 +350,14 @@ public class InputFile {
 	
 					double fpf = (double) fp / normCount;
 					double tpf = (double) tp / disCount;
-					if (rocPoints.containsKey(r)) {
-						rocPoints.get(r).add(new XYPair(fpf, tpf));
-					} else {
-						TreeSet<XYPair> temp = new TreeSet<XYPair>();
-						temp.add(new XYPair(fpf, tpf));
-						rocPoints.put(r, temp);
+					if (normCount!=0 & disCount!=0){          // don't create treemap if there is no data.
+						if (rocPoints.containsKey(r)) {
+							rocPoints.get(r).add(new XYPair(fpf, tpf));
+						} else {
+							TreeSet<XYPair> temp = new TreeSet<XYPair>();
+							temp.add(new XYPair(fpf, tpf));
+							rocPoints.put(r, temp);
+						}
 					}
 				}
 			}
@@ -451,14 +483,21 @@ public class InputFile {
 	 * @param modalityID Modality for which to determine the study design
 	 * @return 2-D array of readers by cases
 	 */
-	public String[][]  getStudyDesign(String modalityID) {
+	public TreeMap<String,String[][]>  getStudyDesign(String modalityID) {
 		String[][] design = new String[(int) Nreader][(int) (Nnormal + Ndisease+1)];
+		String[][] readerrelation = new String[(int) Nreader][2];
+		String[][] caserelation = new String[(int) (Nnormal + Ndisease)][2];
+		TreeMap<String,String[][]> StudyDesignData= new TreeMap<String,String[][]>();
 		//String labelreaderID[]=new String[5];
 		int r = 0, i = 0;
 		for (String readerID : keyedData.keySet()) {
 			i = 0;
 			design[r][i] = readerID;
 			for (String caseID : keyedData.get(readerID).keySet()) {
+				if (r==0){
+					caserelation[i][0]=Integer.toString(i);
+					caserelation[i][1]=caseID;
+				}
 				i++;
 				if (keyedData.get(readerID).get(caseID).get(modalityID) != null) {
 					design[r][i] = "true";
@@ -466,9 +505,14 @@ public class InputFile {
 					design[r][i] = "false";
 				}
 			}
+			readerrelation[r][0]=Integer.toString(r);
+			readerrelation[r][1]=readerID;
 			r++;
 		}
-		return design;
+		StudyDesignData.put("readerrelation", readerrelation);
+		StudyDesignData.put("caserelation", caserelation);
+		StudyDesignData.put("data", design);
+		return StudyDesignData;
 	}
 	
 /*	public boolean[][] getStudyDesign(String modalityID) {
@@ -510,7 +554,7 @@ public class InputFile {
 	 * Given .imrmc input file {@link #filename}, create {@link #fileContent}, then <br>
 	 * ----{@link #getExperimentSizeFromHeader()} <br>
 	 * ----{@link #parseObserverData()} <br>
-	 * ----{@link #verifySizesAndGetIDs(boolean)} <br>
+	 * ----{@link #verifySizesAndGetIDs(boolean,boolean)} <br>
 	 * ----{@link #processScoresAndTruth(boolean)} <br>
 	 * 
 	 * @see #dataCheckResults
@@ -520,8 +564,8 @@ public class InputFile {
 	 * 
 	 * @throws IOException
 	 */
-	public void ReadInputFile() throws IOException {
-	
+	public void ReadInputFile(GUInterface GUInterface_temp) throws IOException {
+	    GUI = GUInterface_temp;
 		try {
 			//InputStreamReader isr;
 			//DataInputStream din;
@@ -531,8 +575,20 @@ public class InputFile {
 			BufferedReader br = new BufferedReader(isr);
 			String strtemp;
 			try {
-				while ((strtemp = br.readLine()) != null) {
-					fileContent.add(strtemp);
+				String inputformat = filename.substring(filename.lastIndexOf(".")+1);
+				if (inputformat.equals("csv")||inputformat.equals("imrmc")||inputformat.equals("omrmc")){
+					while ((strtemp = br.readLine()) != null) {
+						if (strtemp.length()>0 && strtemp.substring(strtemp.length()-2).equals(",,"))
+						strtemp = strtemp.substring(0, strtemp.indexOf(",,"));
+						if (strtemp.length()>0 && strtemp.substring(strtemp.length()-1).equals(","))
+							strtemp = strtemp.substring(0, strtemp.length()-1);
+						fileContent.add(strtemp);
+					}
+				}else{
+					JOptionPane.showMessageDialog(GUI.MRMCobject.getFrame(),
+							"Please choose .imrmc, .omrmc or .csv format inputfile.", "Error",
+							JOptionPane.ERROR_MESSAGE);
+					return;
 				}
 				din.close();
 			} catch (FileNotFoundException e1) {
@@ -545,32 +601,232 @@ public class InputFile {
 		} catch (Exception e) {
 			System.err
 					.println("Error reading file" + filename + e.getMessage());
+			return;
 		}
 		
 			NlinesFileContent = fileContent.size();
-			filePosition = 0;
 
-			getExperimentSizeFromHeader();
 
-			observerData = new String[NlinesFileContent - (filePosition + 1)][4];
-			parseObserverData();
 
-			boolean VerboseTrue=true;
 			
 			// Function determines readerIDs, normalIDs, diseaseIDs, modalityIDs from the data
 			// Return holds string indicating inconsistencies between header and data
 			// User will be made aware of inconsistencies and header info will be ignored
-			verifySizesAndGetIDs(VerboseTrue);
+			if  (GUInterface.selectedInput == GUInterface.DescInputModeImrmc){    // if input raw data
+				filePosition = 0;
+				getExperimentSizeFromHeader();
+				observerData = new String[NlinesFileContent - (filePosition + 1)][4];
+				parseObserverData();
+				boolean VerboseTrue=true;
+				boolean DisplayWarning=true;
+				verifySizesAndGetIDs(VerboseTrue, DisplayWarning);		
+				// fills keyedData and truthVals structures with proper values
+				processScoresAndTruth(VerboseTrue);
+				System.out.println("Input Raw File Successfully Read!");
+				isLoaded = true;
+			}
+			if  (GUInterface.selectedInput == GUInterface.DescInputModeOmrmc){    // if input summary data
+				summaryPosition = 0;
+				findSummaryBegin();
+				findSummaryEnd();				
+				DBRecordStat = GUI.DBRecordStat;
+				loadSummaryData();
+				System.out.println("Input Summary File Successfully Read!");
+				isLoaded = true;
+			}
+			
 
-			// fills keyedData and truthVals structures with proper values
-			processScoresAndTruth(VerboseTrue);
-
-			System.out.println("Input File Successfully Read!");
-
-			isLoaded = true;
 		
 	}
 
+
+
+
+
+	private void findSummaryBegin() throws IOException {
+		String toReturn = "";
+		String tempstr = fileContent.get(0).toUpperCase();
+		int dataloc = tempstr.indexOf("BEGIN SUMMARY");
+		while (dataloc != 0) {
+			try{
+			summaryPosition++;
+			tempstr = fileContent.get(summaryPosition).toUpperCase();
+			dataloc = tempstr.indexOf("BEGIN SUMMARY");
+			}catch (Exception e) {
+				toReturn = "ERROR: Can't find BEGIN SUMMARY";
+				throw new IOException(toReturn, e);
+			}
+		}
+		beginSummaryPosition = summaryPosition;	
+	}
+
+	private void findSummaryEnd() throws IOException {
+		// TODO Auto-generated method stub
+		String toReturn = "";
+		String tempstr = fileContent.get(0).toUpperCase();
+		int dataloc = tempstr.indexOf("END SUMMARY");
+		while (dataloc != 0) {
+			try{
+			summaryPosition++;
+			tempstr = fileContent.get(summaryPosition).toUpperCase();
+			dataloc = tempstr.indexOf("END SUMMARY");
+			}catch (Exception e) {
+				toReturn = "ERROR: Can't find END SUMMARY";
+				throw new IOException(toReturn, e);
+			}
+		}
+		endSummaryPosition = summaryPosition;	
+	}
+
+	private void loadSummaryData() throws IOException {
+		// load data from summary file
+		String toReturn = "";
+		DBRecordStat.AUCsReaderAvg = new double[3];
+		String tempstr = fileContent.get(beginSummaryPosition+1).toUpperCase();//load Nreader
+		try {
+		DBRecordStat.Nreader= Integer.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+		DBRecordStat.NreaderDB= Integer.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+		}catch(NumberFormatException e) {
+			toReturn = "Found NReaderSize =: Text following is not an integer \n"+tempstr;
+			throw new IOException(toReturn);
+		}
+		tempstr = fileContent.get(beginSummaryPosition+2).toUpperCase();//load Nnormal
+		try {
+		DBRecordStat.Nnormal= Integer.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+		DBRecordStat.NnormalDB= Integer.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+		}catch(NumberFormatException e) {
+			toReturn = "Found NReaderSize =: Text following is not an integer \n"+tempstr;
+			throw new IOException(toReturn);
+		}
+		tempstr = fileContent.get(beginSummaryPosition+3).toUpperCase();//load NDisease
+		try {
+		DBRecordStat.Ndisease= Integer.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+		DBRecordStat.NdiseaseDB= Integer.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+		}catch(NumberFormatException e) {
+			toReturn = "Found NReaderSize =: Text following is not an integer \n"+tempstr;
+			throw new IOException(toReturn);
+		}
+		 
+		tempstr = fileContent.get(beginSummaryPosition+5).toUpperCase();//load Modality A
+		try {
+		DBRecordStat.modalityA= tempstr.substring(tempstr.lastIndexOf("=")+1).trim();
+		}catch(NumberFormatException e) {
+			toReturn = "Fail to load Modality A information \n"+tempstr;
+			throw new IOException(toReturn);
+		}
+		tempstr = fileContent.get(beginSummaryPosition+6).toUpperCase();//load Modality B
+		try {
+			DBRecordStat.modalityB= tempstr.substring(tempstr.lastIndexOf("=")+1).trim();
+		}catch(NumberFormatException e) {
+			toReturn = "Fail to load Modality B information \n"+tempstr;
+			throw new IOException(toReturn);
+		}
+	   DBRecordStat.AUCs = new double [(int) DBRecordStat.Nreader][3];
+	   // load average AUC
+	   for (int i = beginSummaryPosition+7; i < endSummaryPosition+1; i++) {
+			tempstr = fileContent.get(i).toUpperCase().trim();
+			int loc = tempstr.indexOf("AUC_A =");
+			if (loc == 0) {
+				try{
+					DBRecordStat.AUCsReaderAvg[0]= Double.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+					}catch(NumberFormatException e) {
+						toReturn = "Found AUC_A =: Text following is not an number \n"+tempstr;
+						throw new IOException(toReturn);
+					}
+			}
+			loc = tempstr.indexOf("AUC_B =");
+			if (loc == 0) {
+				try{
+					DBRecordStat.AUCsReaderAvg[1]= Double.valueOf(tempstr.substring(tempstr.lastIndexOf("=")+1).trim());
+					}catch(NumberFormatException e) {
+						toReturn = "Found AUC_B =: Text following is not an number \n"+tempstr;
+						throw new IOException(toReturn);
+					}
+			}
+
+			// load individual AUCs
+			loc = tempstr.indexOf("READER SPECIFIC AUC");
+			if (loc != -1 ) {
+				for (int k=2;k<DBRecordStat.Nreader+2;k++){
+					tempstr = fileContent.get(i+k).toUpperCase().trim();
+					String tempAUCs[] = fileContent.get(i+k).split(",");
+					readerIDs.put(tempAUCs[0].trim().toUpperCase(),k-2);
+					for (int j = 1; j<tempAUCs.length;j++ ){
+						try{
+						String AUCsnum = tempAUCs[j];
+						DBRecordStat.AUCs[k-2][j-1] = Double.valueOf(AUCsnum.trim());
+						}catch (Exception e) {
+							toReturn = "ERROR: Invalid input of AUCs";
+							toReturn = toReturn + "      row = " +   (i+k+1) + " \n";
+							toReturn = toReturn + fileContent.get(i+k) + " \n";
+
+							throw new IOException(toReturn, e);
+						}
+					}
+
+				}
+			}
+			// load BDG moments
+			loc = tempstr.indexOf("MODALITY1(AUC_A)");
+			if (loc != -1) {
+				String studyinfo[] = fileContent.get(i).split(",");
+				for (int j = 1; j<studyinfo.length;j++ ){
+					try{
+						String tstr = studyinfo[j];
+						DBRecordStat.LoadBDG[0][j-1]= Double.valueOf(tstr.trim());
+					}catch (Exception e) {
+						toReturn = "ERROR: Invalid input of MODALITY1(AUC_A)";
+						toReturn = toReturn + "      row = " +   (i+1) + " \n";
+						toReturn = toReturn + fileContent.get(i) + " \n";
+
+						throw new IOException(toReturn, e);
+					}
+				}
+			}
+			loc = tempstr.indexOf("MODALITY2(AUC_B)");
+			if (loc != -1) {
+				String studyinfo[] = fileContent.get(i).split(",");
+				for (int j = 1; j<studyinfo.length;j++ ){
+					try{
+						String tstr = studyinfo[j];
+						DBRecordStat.LoadBDG[1][j-1]= Double.valueOf(tstr.trim());
+					}catch (Exception e) {
+						toReturn = "ERROR: Invalid input of MODALITY2(AUC_B)";
+						toReturn = toReturn + "      row = " +   (i+1) + " \n";
+						toReturn = toReturn + fileContent.get(i) + " \n";
+	
+						throw new IOException(toReturn, e);
+					}
+				}
+			}
+			loc = tempstr.indexOf("COMP PRODUCT");
+			if (loc != -1) {
+				String studyinfo[] = fileContent.get(i).split(",");
+				for (int j = 1; j<studyinfo.length;j++ ){
+					try{
+						String tstr = studyinfo[j];
+						DBRecordStat.LoadBDG[2][j-1]= Double.valueOf(tstr.trim());
+					}catch (Exception e) {
+						toReturn = "ERROR: Invalid input of COMP PRODUCT";
+						toReturn = toReturn + "      row = " +   (i+1) + " \n";
+						toReturn = toReturn + fileContent.get(i) + " \n";
+
+						throw new IOException(toReturn, e);
+					}
+				}
+			}
+		}		
+		DBRecordStat.AUCsReaderAvg[2]=DBRecordStat.AUCsReaderAvg[0]-DBRecordStat.AUCsReaderAvg[1];
+		// TODO Auto-generated method stub
+		if (DBRecordStat.AUCsReaderAvg[0]!=0 &DBRecordStat.AUCsReaderAvg[1]==0)
+			DBRecordStat.inputMod = 0;
+		if (DBRecordStat.AUCsReaderAvg[1]!=0 &DBRecordStat.AUCsReaderAvg[0]==0)
+			DBRecordStat.inputMod = 1;
+		if (DBRecordStat.AUCsReaderAvg[1]!=0 &DBRecordStat.AUCsReaderAvg[0]!=0)
+			DBRecordStat.inputMod = 2;
+	   
+	}
+	
 
 
 	/**
@@ -640,10 +896,15 @@ public class InputFile {
 					throw new IOException(toReturn);
 				}
 			}
-
-			filePosition++;
-			tempstr = fileContent.get(filePosition).toUpperCase();
-			dataloc = tempstr.indexOf("BEGIN DATA:");
+            try{
+               filePosition++;
+               tempstr = fileContent.get(filePosition).toUpperCase();
+               dataloc = tempstr.indexOf("BEGIN DATA:");
+			}catch (Exception e) {
+				toReturn = "ERROR: Can't find BEGIN DATA";
+				throw new IOException(toReturn, e);
+			}
+			
 		}
 
 		NrowsInHeader = filePosition;
@@ -694,7 +955,7 @@ public class InputFile {
 	 *            
 	 * @throws IOException 
 	 */
-	public void verifySizesAndGetIDs(boolean verbose)
+	public void verifySizesAndGetIDs(boolean verbose, boolean DisplayWarning)
 					throws IOException {
 		
 		Integer in0=-1, in1=-1, inr=-1, inm=-1;
@@ -706,8 +967,8 @@ public class InputFile {
 
 			if(observerData[i][0] == null) break;
 
-			if ( observerData[i][0].equals("-1")){
-				if ( normalIDs.containsKey(observerData[i][1]) || diseaseIDs.containsKey(observerData[i][1]) ){
+			if ( observerData[i][0].equals("-1")){																 // Load truth lines
+				if ( normalIDs.containsKey(observerData[i][1]) || diseaseIDs.containsKey(observerData[i][1]) ){  // Check Duplicate case truth define 
 					dataCheckResults = "ERROR: Duplicate case found"                 + " \n";
 					dataCheckResults = dataCheckResults + "      row = " + (NrowsInHeader+i+2)+ " \n";
 					dataCheckResults = dataCheckResults + "Check for an earlier occurrence:" + " \n";
@@ -749,11 +1010,26 @@ public class InputFile {
 				}
 				// New reader ID?
 				if ( !readerIDs.containsKey(observerData[i][0])  ) {
-					readerIDs.put(observerData[i][0], inr);
+					readerIDs.put(observerData[i][0], inr);					
 				}
 				// New modality ID?
 				if ( !modalityIDs.containsKey(observerData[i][2])) {
-					modalityIDs.put(observerData[i][2], inm);
+					modalityIDs.put(observerData[i][2], inm);			
+					casecount.put(observerData[i][2], new TreeMap<String, Integer[]>());
+				}
+				if (!casecount.get(observerData[i][2]).containsKey(observerData[i][0])) {
+					Integer[] startnum={0,0};
+					casecount.get(observerData[i][2]).put(observerData[i][0],startnum);		
+				}
+				if( normalIDs.containsKey(observerData[i][1]) ) {
+					Integer[] countnum = casecount.get(observerData[i][2]).get(observerData[i][0]);
+					countnum[0]++;
+					casecount.get(observerData[i][2]).put(observerData[i][0],countnum);									
+				}
+				if( diseaseIDs.containsKey(observerData[i][1]) ) {
+					Integer[] countnum = casecount.get(observerData[i][2]).get(observerData[i][0]);
+					countnum[1]++;
+					casecount.get(observerData[i][2]).put(observerData[i][0],countnum);									
 				}
 			}
 		}
@@ -814,7 +1090,24 @@ public class InputFile {
 		if(verbose) {
 			System.out.println("caseIDs: " + caseIDs);
 		}
-
+		String misscasemessage="";
+		int messagecount=0;
+		for (String m : modalityIDs.keySet()){
+			for(String r : readerIDs.keySet()){
+				Integer[] countnum = casecount.get(m).get(r);
+				if (countnum==null||Math.min(countnum[0],countnum[1])<2){
+					misscasemessage = misscasemessage + "Reader: "+r+" reads less than 2 normal or less than 2 disease cases in "+"Modality: "+m+"\n";
+					messagecount++;
+				}
+			}
+		}
+		if (messagecount>0&&DisplayWarning){
+			misscasemessage = misscasemessage + "ROC analysis is not possible and not executed for these reader-modality combinations.";
+		    JFrame frame = new JFrame();
+			JOptionPane.showMessageDialog(
+					frame,misscasemessage, 
+					"Not fully data loaded", JOptionPane.INFORMATION_MESSAGE);
+		}
 	}
 	
 	/**
@@ -841,6 +1134,16 @@ public class InputFile {
 				keyedData.get(r).put(d, new TreeMap<String, Double>());
 			}
 		}
+		
+		for (String m : modalityIDs.keySet()) {
+			ArrayList<String> readerlist = new ArrayList<String>();
+			ArrayList<String> normallist = new ArrayList<String>();
+			ArrayList<String> diseaselist = new ArrayList<String>();
+			modinformation.put(m, new TreeMap<String,ArrayList<String>>()) ;
+			modinformation.get(m).put("reader", readerlist);
+			modinformation.get(m).put("normal", normallist);
+			modinformation.get(m).put("disease", diseaselist);
+		}
 
 		// Determine caseIDs
 		Integer ic=0;
@@ -852,7 +1155,6 @@ public class InputFile {
 		for (int i = 0; i < observerData.length; i++) {
 			
 			if(observerData[i][0] == null) break;
-
 			String readerID   = observerData[i][0];
 			String caseID     = observerData[i][1];
 			String modalityID = observerData[i][2];
@@ -872,18 +1174,29 @@ public class InputFile {
 
 				}
 				else {
-					keyedData.get(readerID).get(caseID).put(modalityID, score);
+					Integer[] countnum = casecount.get(modalityID).get(readerID);
+					if (Math.min(countnum[0],countnum[1])>2){
+						keyedData.get(readerID).get(caseID).put(modalityID, score);
+						if (!modinformation.get(modalityID).get("reader").contains(readerID)){
+							modinformation.get(modalityID).get("reader").add(readerID);
+						}
+						if ( normalIDs.containsKey(caseID) & !modinformation.get(modalityID).get("normal").contains(caseID)){
+							modinformation.get(modalityID).get("normal").add(caseID);
+						}
+						if ( diseaseIDs.containsKey(caseID) & !modinformation.get(modalityID).get("disease").contains(caseID)){
+							modinformation.get(modalityID).get("disease").add(caseID);
+						}
+					}
 				}
 			}
 
 		}
-		
 	}
 
 	public void resetInputFile() {
 
 		observerData = null;
-		
+		isLoaded = false;
 		keyedData.clear();
 		truthVals.clear();
 

@@ -25,11 +25,14 @@ import roemetz.gui.RMGUInterface.SeedInputListener;
 import java.awt.event.*;
 import java.awt.*;
 
+import mrmc.chart.exploreExpSize;
 import mrmc.core.DBRecord;
+import mrmc.core.InputFile;
 import mrmc.core.MRMC;
 import mrmc.core.StatTest;
 
 import java.text.DecimalFormat;
+import java.util.ArrayList;
 
 /**
  * Panel for sizing new trials and generating reports for given input
@@ -41,9 +44,17 @@ import java.text.DecimalFormat;
 public class SizePanel {
 	public static String viewresultnew; // added for saving the results
 	private GUInterface GUI;
+	private InputFile InputFile1;
 	private DBRecord DBRecordSize;
 	public JPanel JPanelSize = new JPanel();
 	private JFrame reportFrame;
+	public JRadioButton 
+		ButtonPairedReadersYes,
+		ButtonPairedReadersNo,
+		ButtonPairedNormalsYes,
+		ButtonPairedNormalsNo,
+		ButtonPairedDiseasedYes,
+		ButtonPairedDiseasedNo;
 
 	public JTextField
 		NumSplitPlotsJTextField,
@@ -85,7 +96,7 @@ public class SizePanel {
 	DecimalFormat twoDec = new DecimalFormat("0.00");
 	DecimalFormat threeDec = new DecimalFormat("0.000");
 	DecimalFormat fourDec = new DecimalFormat("0.0000");
-	DecimalFormat threeDecE = new DecimalFormat("0.000E0");
+	public DecimalFormat threeDecE = new DecimalFormat("0.000E0");
 	DecimalFormat fiveDecE = new DecimalFormat("0.00000E0");
 
 	/**
@@ -104,7 +115,7 @@ public class SizePanel {
 	 * 
 	 */
 	public SizePanel(GUInterface GUItemp) {
-		
+
 		GUI = GUItemp;
 		DBRecordSize = GUI.DBRecordSize;
 		JPanelSize.setLayout(new BoxLayout(JPanelSize, BoxLayout.Y_AXIS));
@@ -142,6 +153,10 @@ public class SizePanel {
 		JButton sizeTrial = new JButton("Size a Trial");
 		sizeTrial.addActionListener(new sizeTrialListener());
 		SizePanelRow2.add(sizeTrial);
+		//
+		JButton fullyTrial = new JButton("Explore Experiment Size");
+		fullyTrial.addActionListener(new fullyTrialListener());
+		SizePanelRow2.add(fullyTrial);
 
 		/*
 		 * Populate the row by adding elements
@@ -157,14 +172,18 @@ public class SizePanel {
 		SizePanelRow5.add(SizeJLabelLambdaBDG);
 		SizePanelRow5.add(SizeJLabelPowerBDG);
 		SizePanelRow5.add(SizeJLabelCIBDG);
-
-		SizePanelRow6.add(SizeJLabelDFHillis);
-		SizePanelRow6.add(SizeJLabelLambdaHillis);
-		SizePanelRow6.add(SizeJLabelPowerHillis);
-		SizePanelRow6.add(SizeJLabelCIHillis);
+		
+		JButton sizeHillis = new JButton("Hillis Approx");
+		JPanel SizePanelRow6 = new JPanel();
+		sizeHillis.addActionListener(new SizeHillisButtonListener());
+		SizePanelRow6.add(sizeHillis);
+		//SizePanelRow6.add(SizeJLabelDFHillis);
+		//SizePanelRow6.add(SizeJLabelLambdaHillis);
+		//SizePanelRow6.add(SizeJLabelPowerHillis);
+		//SizePanelRow6.add(SizeJLabelCIHillis);
 
 		// not ready to add split plot, an pairing readers or cases to sizing panel
-		// JPanelSize.add(SizePanelRow1);
+		JPanelSize.add(SizePanelRow1);
 		JPanelSize.add(SizePanelRow2);
 		JPanelSize.add(SizePanelRow3);
 		JPanelSize.add(SizePanelRow4);
@@ -194,9 +213,9 @@ public class SizePanel {
 		 * Radio buttons to select paired readers
 		 * The same readers will read all the cases in both modalities
 		 */
-		JRadioButton ButtonPairedReadersYes = new JRadioButton("Yes");
+		ButtonPairedReadersYes = new JRadioButton("Yes");
 		ButtonPairedReadersYes.setActionCommand("Yes");
-		JRadioButton ButtonPairedReadersNo = new JRadioButton("No");
+		ButtonPairedReadersNo = new JRadioButton("No");
 		ButtonPairedReadersNo.setActionCommand("No");
 		if( pairedReadersFlag==1 ) ButtonPairedReadersYes.setSelected(true);
 		else ButtonPairedReadersNo.setSelected(true);
@@ -215,9 +234,9 @@ public class SizePanel {
 		 * Radio buttons to select paired normals
 		 * The same cases will be read in both modalites by all the readers
 		 */
-		JRadioButton ButtonPairedNormalsYes = new JRadioButton("Yes");
+		ButtonPairedNormalsYes = new JRadioButton("Yes");
 		ButtonPairedNormalsYes.setActionCommand("Yes");
-		JRadioButton ButtonPairedNormalsNo = new JRadioButton("No");
+		ButtonPairedNormalsNo = new JRadioButton("No");
 		ButtonPairedNormalsNo.setActionCommand("No");
 		if( pairedNormalsFlag==1 ) ButtonPairedNormalsYes.setSelected(true);
 		else ButtonPairedNormalsNo.setSelected(true);
@@ -236,9 +255,9 @@ public class SizePanel {
 		 * Radio buttons to select paired diseased
 		 * The same cases will be read in both modalites by all the readers
 		 */
-		JRadioButton ButtonPairedDiseasedYes = new JRadioButton("Yes");
+		ButtonPairedDiseasedYes = new JRadioButton("Yes");
 		ButtonPairedDiseasedYes.setActionCommand("Yes");
-		JRadioButton ButtonPairedDiseasedNo = new JRadioButton("No");
+		ButtonPairedDiseasedNo = new JRadioButton("No");
 		ButtonPairedDiseasedNo.setActionCommand("No");
 		if( pairedDiseasedFlag==1 ) ButtonPairedDiseasedYes.setSelected(true);
 		else ButtonPairedDiseasedNo.setSelected(true);
@@ -262,11 +281,11 @@ public class SizePanel {
 	 * Clears all input fields and statistics labels
 	 */
 	void resetSizePanel() {
+		DBRecordSize.totalVar = -1.0;
+		SizeJLabelSqrtVar.setText("S.E=");
+//		SizeJLabelTStat.setText(",  Test Stat=");
 		
-		SizeJLabelSqrtVar.setText("SqrtVar=");
-		SizeJLabelTStat.setText(",  Test Stat=");
-		
-		SizeJLabelPowerNormal.setText("Normal Approx:  df= \u221e,  Power=");
+		SizeJLabelPowerNormal.setText("Large Sample Approx(Normal),  Power=");
 //		SizeJLabelCINormal.setText("Conf. Int.=");
 
 		SizeJLabelDFBDG.setText("          BDG:  df=");
@@ -274,10 +293,23 @@ public class SizePanel {
 		SizeJLabelPowerBDG.setText(",  Power=");
 //		SizeJLabelCIBDG.setText("Conf. Int.=");
 
-		SizeJLabelDFHillis.setText("  Hillis 2011:  df=");
-		SizeJLabelLambdaHillis.setText(",  Lambda=");
-		SizeJLabelPowerHillis.setText(",  Power=");
+		SizeJLabelDFHillis.setText("df=");
+		SizeJLabelLambdaHillis.setText("Lambda=");
+		SizeJLabelPowerHillis.setText("Power=");
 //		SizeJLabelCIHillis.setText("Conf. Int.=");
+		
+		// set study design to default 1, yes, yes, yes
+	    NumSplitPlotsJTextField.setText("1");
+	    numSplitPlots = 1;
+		ButtonPairedReadersYes.setSelected(true);
+		ButtonPairedReadersNo.setSelected(false);
+		pairedReadersFlag=1;
+	    ButtonPairedNormalsYes.setSelected(true);
+	    ButtonPairedNormalsNo.setSelected(false);
+	    pairedNormalsFlag=1;
+	    ButtonPairedDiseasedYes.setSelected(true);
+	    ButtonPairedDiseasedNo.setSelected(false);
+	    pairedDiseasedFlag=1;
 	
 	}
 	
@@ -290,16 +322,17 @@ public class SizePanel {
 		StatTest testSize = DBRecordSize.testSize;
 		String output;
 		
-		output = "SqrtVar=" 
-				+ threeDecE.format(Math.sqrt(DBRecordSize.totalVar));
-		
+		//output = "S.E=" 
+		//		+ threeDecE.format(Math.sqrt(DBRecordSize.totalVar));
+		output = "S.E=" 
+				+ threeDecE.format(DBRecordSize.SE);
 		
 		SizeJLabelSqrtVar.setText(output);
-		output = ",  Stat= "
-				+ threeDecE.format(testSize.tStatCalc);
-		SizeJLabelTStat.setText(output);
+		//output = ",  Stat= "
+		//		+ threeDecE.format(testSize.tStatCalc);
+		//SizeJLabelTStat.setText(output);
 
-		output = "Normal Approx:  df= \u221e ,  Power= "
+		output = "Large Sample Approx(Normal) ,  Power= "
 				+ twoDec.format(testSize.powerNormal);
 		SizeJLabelPowerNormal.setText(output);
 		output = ",  Conf. Int.=("
@@ -333,25 +366,25 @@ public class SizePanel {
 				&& this.pairedNormalsFlag == 1
 				&& this.pairedDiseasedFlag ==1) {
 			
-			output = "   Hillis 2011:  df= "
+			output = "df= "
 					+ twoDec.format(testSize.DF_Hillis);
 			SizeJLabelDFHillis.setText(output);
-			output = ",  Lambda= "
+			output = "Lambda= "
 					+ twoDec.format(testSize.lambdaHillis);
 			SizeJLabelLambdaHillis.setText(output);
-			output = ",  Power= "
+			output = "Power= "
 					+ twoDec.format(testSize.powerHillis);
 			SizeJLabelPowerHillis.setText(output);
-			output = ",  Conf. Int.=("
+			output = "Conf. Int.=("
 					+ fourDec.format(testSize.ciBotHillis)
 					+ ", "
 					+ fourDec.format(testSize.ciTopHillis)
 					+ ")";
 //			SizeJLabelCIHillis.setText(output);
 		} else {
-			SizeJLabelDFHillis.setText("  Hillis 2011:  df=");
-			SizeJLabelLambdaHillis.setText(",  Lambda=");
-			SizeJLabelPowerHillis.setText(",  Power=");
+			SizeJLabelDFHillis.setText("df=");
+			SizeJLabelLambdaHillis.setText("Lambda=");
+			SizeJLabelPowerHillis.setText("Power=");
 //			SizeJLabelCIHillis.setText("Conf. Int.=");
 		}
 
@@ -372,266 +405,39 @@ public class SizePanel {
 		results = results + "\t" + SizeJLabelPowerBDG.getText();
 		results = results + "\t" + SizeJLabelCIBDG.getText();
 		results = results + "\r\n";
-		results = results + "\t" + SizeJLabelDFHillis.getText();
-		results = results + "\t" + SizeJLabelPowerHillis.getText();
-		results = results + "\t" + SizeJLabelCIHillis.getText();
+		if (DBRecordSize.flagFullyCrossed){
+			results = results + "Hillis:" ; 
+			results = results + "\t" + SizeJLabelDFHillis.getText();
+			results = results + "\t" + SizeJLabelPowerHillis.getText();
+			results = results + "\t" + SizeJLabelCIHillis.getText();
+		}else{
+			results = results + "The Hillis degrees of freedom are not calculated when the data is not fully crossed.";
+		}
 
 		return results;
 	}
 
 	/**
-	 * Creates a textual representation of the current record analysis and trial
-	 * sizing results
+	 * Gets statistics for new trial sizing in String format
 	 * 
-	 * @return String containing experiment parameters, components, trial size
-	 *         info
+	 * @return String of statistics for new trial sizing for export to file
 	 */
-	public String genReport() {
-
-		int useMLE = DBRecordSize.flagMLE;
-
-//		double[][] BDG = DBRecordSize.BDG;
-//		double[][] DBM = DBRecordSize.DBM;
-//		double[][] BCK = DBRecordSize.BCK;
-//		double[][] OR = DBRecordSize.OR;
-//		double[][] MS = DBRecordSize.MS;
-		
-		double[][] BDG = DBRecordSize.BDGresult;
-		double[][] DBM = DBRecordSize.DBMresult;
-		double[][] BCK = DBRecordSize.BCKresult;
-		double[][] OR = DBRecordSize.ORresult;
-		double[][] MS = DBRecordSize.MSresult;
-		
-		if(useMLE == 1) {
-			BDG = DBRecordSize.BDGbiasresult;
-			DBM = DBRecordSize.DBMbiasresult;
-			BCK = DBRecordSize.BCKbiasresult;
-			OR = DBRecordSize.ORbiasresult;
-			MS = DBRecordSize.MSbiasresult;
+	public String exportSizeResults() {
+		String results = SizeJLabelSqrtVar.getText() + "\r\n";;
+		results = results + SizeJLabelTStat.getText();
+		results = results +  SizeJLabelPowerNormal.getText();
+		results = results + "\r\n";
+		results = results + SizeJLabelDFBDG.getText().trim();
+		results = results + SizeJLabelPowerBDG.getText();
+		results = results + "\r\n";
+		if (DBRecordSize.flagFullyCrossed){
+		results = results + "Hills:" + SizeJLabelDFHillis.getText();
+		results = results + ", " + SizeJLabelPowerHillis.getText();
+		}else{
+			results = results + "The Hillis degrees of freedom are not calculated when the data is not fully crossed.";
 		}
-//		double[][] BDGcoeff = DBRecordSize.BDGcoeff;
-//		double[][] BCKcoeff = DBRecordSize.BCKcoeff;
-//		double[][] DBMcoeff = DBRecordSize.DBMcoeff;
-//		double[][] ORcoeff = DBRecordSize.ORcoeff;
-//		double[][] MScoeff = DBRecordSize.MScoeff;
-		
-		double[][] BDGcoeff = DBRecordSize.BDGcoeffresult;
-		double[][] BCKcoeff = DBRecordSize.BCKcoeffresult;
-		double[][] DBMcoeff = DBRecordSize.DBMcoeffresult;
-		double[][] ORcoeff = DBRecordSize.ORcoeffresult;
-		double[][] MScoeff = DBRecordSize.MScoeffresult;
-
-		statParms[0] = Double.parseDouble(SigLevelJTextField.getText());
-		statParms[1] = Double.parseDouble(EffSizeJTextField.getText());
-		String result = GUI.StatPanel1.getStatResults();
-
-		int NreaderSize = Integer.parseInt(NreaderJTextField.getText());
-		int NnormalSize = Integer.parseInt(NnormalJTextField.getText());
-		int NdiseaseSize = Integer.parseInt(NdiseaseJTextField.getText());
-
-		String resultnew = getSizeResults();
-		
-
-		String str = "";
-		str = str + "MRMC summary statistics from " +MRMC.versionname + "\r\n";
-		str = str + "Summary statistics written to file named:" + "\r\n";
-		str = str + GUInterface.summaryfilename + "\r\n";
-		str = str + DBRecordSize.recordDesc;
-		str = str + "Reader=" + Long.toString(DBRecordSize.Nreader) + SEPA
-				+ "Normal=" + Long.toString(DBRecordSize.Nnormal) + SEPA
-				+ "Disease=" + Long.toString(DBRecordSize.Ndisease);
-		
-		if (useMLE == 1)
-			str = str + "this report uses MLE estimate of components.\r\n";
-		str = str + "\r\n*****************************************************************";
-		str = str + "\r\n" + GUI.DBRecordStat.getAUCsReaderAvgString(DBRecordSize.selectedMod);
-		str = str + "\r\nStatistical Tests:\r\n" + result + SEPA;
-
-		str = str
-				+ "\r\n*****************************************************************\r\n";
-		str = str + "NReaderSize=" + NreaderSize + SEPA + "NnormalSize=" + NnormalSize + SEPA
-				+ "NDiseaseSize=" + NdiseaseSize + "\r\n";
-		str = str
-				+ "\r\n**********************BDG Results***************************\r\n";
-		str = str + "Moments" + SEPA + "M1" + SEPA + "M2" + SEPA + "M3" + SEPA
-				+ "M4" + SEPA + "M5" + SEPA + "M6" + SEPA + "M7" + SEPA + "M8"
-				+ "\r\n";
-		str = str + "Modality1(AUC_A)" + SEPA;
-		for (int i = 0; i < 8; i++)
-			str = str + fiveDecE.format(BDG[0][i]) + SEPA;
-		str = str + "\r\n" + "Modality2(AUC_B)" + SEPA;
-		for (int i = 0; i < 8; i++)
-			str = str + fiveDecE.format(BDG[1][i]) + SEPA;
-		str = str + "\r\n" + "Difference(AUC_A - AUC_B)" + SEPA;
-		for (int i = 0; i < 8; i++)
-			str = str + fiveDecE.format(BDG[3][i]) + SEPA;
-		str = str + "\r\n" + "Coeff" + SEPA;
-		for (int i = 0; i < 8; i++)
-			str = str + fiveDecE.format(BDGcoeff[0][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************BCK Results***************************";
-		str = str + "\r\nMoments" + SEPA + "N" + SEPA + "D" + SEPA + "N~D" + SEPA
-				+ "R" + SEPA + "N~R" + SEPA + "D~R" + SEPA + "R~N~D";
-		str = str + "\r\nModality1(AUC_A)" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(BCK[0][i]) + SEPA;
-		str = str + "\r\nModality2(AUC_B)" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(BCK[1][i]) + SEPA;
-		str = str + "\r\nDifference(AUC_A - AUC_B)" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(BCK[3][i]) + SEPA;
-		str = str + "\r\nCoeff" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(BCKcoeff[0][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************DBM Results***************************";
-		str = str + "\r\nComponents" + SEPA + "R" + SEPA + "C" + SEPA + "R~C"
-				+ SEPA + "T~R" + SEPA + "T~C" + SEPA + "T~R~C";
-		str = str + "\r\nModality1(AUC_A)" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBM[0][i]) + SEPA;
-		str = str + "\r\nModality2(AUC_B)" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBM[1][i]) + SEPA;
-		str = str + "\r\nDifference(AUC_A - AUC_B)" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBM[3][i]) + SEPA;
-		str = str + "\r\nCoeff" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBMcoeff[3][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************OR Results***************************";
-		str = str + "\r\nComponents" + SEPA + "R" + SEPA + "TR" + SEPA + "COV1"
-				+ SEPA + "COV2" + SEPA + "COV3" + SEPA + "ERROR";
-		str = str + "\r\nModality1(AUC_A)" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(OR[0][i]) + SEPA;
-		str = str + "\r\nModality2(AUC_B)" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(OR[1][i]) + SEPA;
-		str = str + "\r\nDifference(AUC_A - AUC_B)" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(OR[3][i]) + SEPA;
-		str = str + "\r\nCoeff" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(ORcoeff[3][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************BDG output Results***************************\r\n";
-		str = str + "Moments" + SEPA + "M1" + SEPA + "M2" + SEPA + "M3" + SEPA
-				+ "M4" + SEPA + "M5" + SEPA + "M6" + SEPA + "M7" + SEPA + "M8";
-		/*
-		 * added for saving the results
-		 */
-		str = str + "\r\n" + "comp M0" + SEPA;
-		for(int i = 0; i<8; i++)
-			str = str + fiveDecE.format(DBRecord.BDGPanelresult[0][i]) + SEPA;
-		str = str + "\r\n" + "coeff M0" + SEPA;
-		for(int i = 0; i<8; i++)
-			str = str + fiveDecE.format(DBRecord.BDGPanelresult[1][i]) + SEPA;
-		str = str + "\r\n" + "comp M1" + SEPA;
-		for(int i = 0; i<8; i++)
-			str = str + fiveDecE.format(DBRecord.BDGPanelresult[2][i]) + SEPA;
-		str = str + "\r\n" + "coeff M1" + SEPA;
-		for(int i = 0; i<8; i++)
-			str = str + fiveDecE.format(DBRecord.BDGPanelresult[3][i]) + SEPA;
-		str = str + "\r\n" + "comp product" + SEPA;
-		for(int i = 0; i<8; i++)
-			str = str + fiveDecE.format(DBRecord.BDGPanelresult[4][i]) + SEPA;
-		str = str + "\r\n" + "-coeff product" + SEPA;
-		for(int i = 0; i<8; i++)
-			str = str + fiveDecE.format(DBRecord.BDGPanelresult[5][i]) + SEPA;
-		str = str + "\r\n" + "total" + SEPA;
-		for(int i = 0; i<8; i++)
-			str = str + fiveDecE.format(DBRecord.BDGPanelresult[6][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************BCK output Results***************************";
-		str = str + "\r\nMoments" + SEPA + "N" + SEPA + "D" + SEPA + "N~D" + SEPA
-				+ "R" + SEPA + "N~R" + SEPA + "D~R" + SEPA + "R~N~D";
-		str = str + "\r\n" + "comp M0" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(DBRecord.BCKPanelresult[0][i]) + SEPA;
-		str = str + "\r\n" + "coeff M0" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(DBRecord.BCKPanelresult[1][i]) + SEPA;
-		str = str + "\r\n" + "comp M1" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(DBRecord.BCKPanelresult[2][i]) + SEPA;
-		str = str + "\r\n" + "coeff M1" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(DBRecord.BCKPanelresult[3][i]) + SEPA;
-		str = str + "\r\n" + "comp product" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(DBRecord.BCKPanelresult[4][i]) + SEPA;
-		str = str + "\r\n" + "-coeff product" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(DBRecord.BCKPanelresult[5][i]) + SEPA;
-		str = str + "\r\n" + "total" + SEPA;
-		for (int i = 0; i < 7; i++)
-			str = str + fiveDecE.format(DBRecord.BCKPanelresult[6][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************DBM output Results***************************";
-		str = str + "\r\nComponents" + SEPA + "R" + SEPA + "C" + SEPA + "R~C"
-				+ SEPA + "T~R" + SEPA + "T~C" + SEPA + "T~R~C";
-		str = str + "\r\n" + "components" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.DBMPanelresult[0][i]) + SEPA;
-		str = str + "\r\n" + "coeff" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.DBMPanelresult[1][i]) + SEPA;
-		str = str + "\r\n" + "total" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.DBMPanelresult[2][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************OR output Results***************************";
-		str = str + "\r\nComponents" + SEPA + "R" + SEPA + "TR" + SEPA + "COV1"
-				+ SEPA + "COV2" + SEPA + "COV3" + SEPA + "ERROR";
-		str = str + "\r\n" + "components" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.ORPanelresult[0][i]) + SEPA;
-		str = str + "\r\n" + "coeff" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.ORPanelresult[1][i]) + SEPA;
-		str = str + "\r\n" + "total" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.ORPanelresult[2][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n**********************MS output Results***************************";
-		str = str + "\r\nComponents" + SEPA + "R" + SEPA + "C" + SEPA + "RC"
-				+ SEPA + "MR" + SEPA + "MC" + SEPA + "MRC";
-		str = str + "\r\ncomponents" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.MSPanelresult[0][i]) + SEPA;
-		str = str + "\r\ncoeff" + SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.MSPanelresult[1][i]) + SEPA;
-		str = str + "\r\n" + "total"+ SEPA;
-		for (int i = 0; i < 6; i++)
-			str = str + fiveDecE.format(DBRecord.MSPanelresult[2][i]) + SEPA;
-		str = str +"\r\n"; 
-		str = str
-				+ "\r\n*****************************************************************";
-		str = str + "\r\n" + "Effective Size = " + twoDec.format(statParms[1])
-				+ SEPA + "Significance Level = " + twoDec.format(statParms[0]);
-		str = str
-				+ "\r\n*****************************************************************";
-		str = str + "\r\nSizing Results:\r\n";
-		str = str + resultnew;
-		str = str
-				+ "\r\n*****************************************************************\r\n";
-
-		return str;
-
+		return results;
 	}
-
 	public class NumSplitPlotsListener implements FocusListener {
 	
 		@Override
@@ -696,32 +502,6 @@ public class SizePanel {
 		}
 	}
 
-	/**
-	 * Handler for button to generate report of analysis
-	 */
-	class genReportListener implements ActionListener {
-		public void actionPerformed(ActionEvent e) {
-
-			reportFrame = new JFrame(
-					" please copy and paste the report to your own editor");
-
-			reportFrame.getRootPane().setWindowDecorationStyle(
-					JRootPane.PLAIN_DIALOG);
-			String str = "";
-			if (GUI.getSelectedInput() == GUInterface.DescInputModeManual)
-				str = genReport();
-			else
-				str = genReport();
-			JTextArea report = new JTextArea(str, 50, 50);
-			JScrollPane scrollPane = new JScrollPane(report,
-					JScrollPane.VERTICAL_SCROLLBAR_ALWAYS,
-					JScrollPane.HORIZONTAL_SCROLLBAR_ALWAYS);
-			reportFrame.getContentPane().add(scrollPane);
-			report.setLineWrap(true);
-			reportFrame.pack();
-			reportFrame.setVisible(true);
-		}
-	}
 
 	/**
 	 * Handler for button to size trial based on specified parameters
@@ -740,7 +520,9 @@ public class SizePanel {
 				sigLevel = Double.parseDouble(SigLevelJTextField.getText());
 				effSize = Double.parseDouble(EffSizeJTextField.getText());
 
-				DBRecordSize.DBRecordSizeFill(GUI.SizePanel1);
+				boolean sizesucceed = DBRecordSize.DBRecordSizeFill(GUI.SizePanel1);
+				if (!sizesucceed)
+					return;
 				setSizePanel();
 
 			} catch (NumberFormatException e1) {
@@ -748,5 +530,56 @@ public class SizePanel {
 						"Error", JOptionPane.ERROR_MESSAGE);
 			}
 		}
+	}
+	
+	/**
+	 * Handler for button to size trial based on specified parameters
+	 */
+	class fullyTrialListener implements ActionListener {
+		public void actionPerformed(ActionEvent e) {
+			try {
+				if (GUI.DBRecordStat.totalVar <= 0.0) {
+					JOptionPane.showMessageDialog(GUI.MRMCobject.getFrame(),
+							"Must perform variance analysis first.", "Error",
+							JOptionPane.ERROR_MESSAGE);
+					return;
+				}
+				sigLevel = Double.parseDouble(SigLevelJTextField.getText());
+				effSize = Double.parseDouble(EffSizeJTextField.getText());
+				exploreExpSize ees =  new exploreExpSize (DBRecordSize, GUI, GUI.SizePanel1);
+				
+		//		DBRecordSize.DBRecordSizeFill(GUI.SizePanel1);
+			//	setSizePanel();
+
+			} catch (NumberFormatException e1) {
+				JOptionPane.showMessageDialog(reportFrame, "Invalid Input",
+						"Error", JOptionPane.ERROR_MESSAGE);
+			}
+		}
+	}
+	
+	/**
+	 * Handler for button to Hillis Approx on specified parameters
+	 */
+	public class SizeHillisButtonListener implements ActionListener {
+
+		public void actionPerformed(ActionEvent e) {
+			String hillisValues;
+			if (DBRecordSize.flagFullyCrossed){
+			hillisValues = "Hillis 2011:"  +"\n"+  
+					SizeJLabelDFHillis.getText() +"\n"+ 
+					SizeJLabelLambdaHillis.getText() + "\n" + 
+					SizeJLabelPowerHillis.getText() + "\n" + 
+					SizeJLabelCIHillis.getText();
+			}else{
+				hillisValues = "The Hillis degrees of freedom are not calculated when the data is not fully crossed.";
+			}
+					
+			// TODO Auto-generated method stub
+			JOptionPane.showMessageDialog(reportFrame,
+					hillisValues, "Hillis Approximation",
+					JOptionPane.PLAIN_MESSAGE);
+		}
+
 	}
 }

@@ -40,6 +40,8 @@ import java.io.FileNotFoundException;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.text.DateFormat;
 import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
@@ -52,15 +54,19 @@ import java.util.concurrent.atomic.AtomicInteger;
 import javax.swing.*;
 import javax.swing.filechooser.FileNameExtensionFilter;
 
+import mrmc.chart.exportToFile;
 import mrmc.core.DBRecord;
 import mrmc.core.InputFile;
+import mrmc.core.MRMC;
 import mrmc.core.Matrix;
 import mrmc.core.StatTest;
+import mrmc.gui.GUInterface;
 import mrmc.gui.SizePanel;
 import mrmc.gui.StatPanel;
 import roemetz.core.CalcGenRoeMetz;
 import roemetz.core.RoeMetz;
 import roemetz.core.SimRoeMetz;
+import roemetz.core.validateFunction;
 import umontreal.iro.lecuyer.rng.RandomStream;
 import umontreal.iro.lecuyer.rng.WELL1024;
 
@@ -78,23 +84,31 @@ import umontreal.iro.lecuyer.rng.WELL1024;
 public class RMGUInterface {
 
 
-
 	private final int USE_MLE = 1;
 	private final int NO_MLE = 0;
 	private static RoeMetz RoeMetz1;
-	SizePanel SizePanelRoeMetz;
+	public DBRecord varDBRecordStat;
+	private File inputDirectory = null;
+	private File outputDirectory = null;
+	private String inputFileName ="";
+	public SizePanel SizePanelRoeMetz;
+	public boolean processDone = false;
+	public DBRecord avgDBRecordStat;
+	public StatPanel StatPanel1;
+	public StatPanel StatPanelNumerical;
+	public static int RandomStreamID = 1;
+	private double[][] trialResultArray; 
 	JPanel studyDesignJPanel;
-
 	/**
 	 * Input means
 	 */
-	JTextField 
+	public static JTextField 
 		mu0 = new JTextField("1.0", 6),
 		mu1 = new JTextField("1.0", 6);
 	/**
 	 * Input variances invariant to modality
 	 */
-	JTextField 
+	public static JTextField 
 		v_R0 = new JTextField("0.166", 6),
 		v_C0 = new JTextField("0.166", 6),
 		v_RC0 = new JTextField("0.166", 6),
@@ -104,7 +118,7 @@ public class RMGUInterface {
 	/** 
 	 * Input variances specific to modality A
 	 */
-	JTextField 
+	public static JTextField 
 		v_AR0 = new JTextField("0.166", 6),
 		v_AC0 = new JTextField("0.166", 6),
 		v_ARC0 = new JTextField("0.166", 6),
@@ -114,7 +128,7 @@ public class RMGUInterface {
 	/**
 	 * Input variances specific to modality B
 	 */
-	JTextField
+	public static JTextField
 		v_BR0 = new JTextField("0.166", 6),
 		v_BC0 = new JTextField("0.166", 6),
 		v_BRC0 = new JTextField("0.166", 6),
@@ -124,7 +138,7 @@ public class RMGUInterface {
 	/**
 	 * Input experiment size
 	 */
-	JTextField
+	public static JTextField
 		NnormalJTextField = new JTextField("20", 6),
 		NdiseaseJTextField = new JTextField("20", 6),
 		NreaderJTextField = new JTextField("4", 6);
@@ -132,11 +146,11 @@ public class RMGUInterface {
 	/**
 	 * Number of experiments
 	 */
-	JTextField JTextField_Nexp = new JTextField("10",7);
+	public static JTextField JTextField_Nexp = new JTextField("10",7);
 	/**
 	 * Initial seed for RNG
 	 */
-	JTextField JTextField_seed;
+	public static JTextField JTextField_seed;
 	
 	private JDialog progDialog;
 	private JCheckBox useMLEbox = new JCheckBox("Use MLE?");
@@ -149,6 +163,7 @@ public class RMGUInterface {
 	public DecimalFormat threeDecOptE = new DecimalFormat("0.###E0");
 	public DecimalFormat threeDec = new DecimalFormat("0.000");
 	public DecimalFormat threeDecE = new DecimalFormat("0.000E0");
+	public DecimalFormat fourDecE = new DecimalFormat("0.0000E0");
 	public DecimalFormat fiveDecOpt = new DecimalFormat( "0.#####");
 	public DecimalFormat fiveDecOptE = new DecimalFormat("0.#####E0");
 	public DecimalFormat fiveDec = new DecimalFormat( "0.00000");
@@ -388,7 +403,7 @@ public class RMGUInterface {
 		simExpButtons.add(Box.createHorizontalStrut(20));
 
 		// Output location button
-		JButton saveLoc = new JButton("Output Location");
+		JButton saveLoc = new JButton("Output Raw Data");
 		saveLoc.addActionListener(new SaveSimulationListener());
 		simExpButtons.add(saveLoc);
 
@@ -472,6 +487,23 @@ public class RMGUInterface {
 		NnormalJTextField.setText("");
 		NdiseaseJTextField.setText("");
 		NreaderJTextField.setText("");
+		// set study design to default 1, yes, yes, yes
+	    SizePanelRoeMetz.NumSplitPlotsJTextField.setText("1");
+	    SizePanelRoeMetz.numSplitPlots = 1;
+		SizePanelRoeMetz.ButtonPairedReadersYes.setSelected(true);
+		SizePanelRoeMetz.ButtonPairedReadersNo.setSelected(false);
+		SizePanelRoeMetz.pairedReadersFlag=1;
+	    SizePanelRoeMetz.ButtonPairedNormalsYes.setSelected(true);
+	    SizePanelRoeMetz.ButtonPairedNormalsNo.setSelected(false);
+	    SizePanelRoeMetz.pairedNormalsFlag=1;
+	    SizePanelRoeMetz.ButtonPairedDiseasedYes.setSelected(true);
+	    SizePanelRoeMetz.ButtonPairedDiseasedNo.setSelected(false);
+	    SizePanelRoeMetz.pairedDiseasedFlag=1;
+		//JTextField_seed.setText("123456");
+		JTextField_Nexp.setText("10");
+	    useMLEbox.setSelected(false);
+	    useMLE = NO_MLE;
+		
 	}
 
 	/**
@@ -481,7 +513,7 @@ public class RMGUInterface {
 	 * 
 	 * @param f The file object from which to read values
 	 */
-	private void parseCofVfile(File f) {
+	public void parseCofVfile(File f) {
 		ArrayList<String> fileContent = new ArrayList<String>();
 
 		if (f != null) {
@@ -647,6 +679,89 @@ public class RMGUInterface {
 				NreaderJTextField.setText(tempstr.substring(tmploc + 1).trim());
 				continue;
 			}
+			loc = tempstr.indexOf("SPLIT-PLOT GROUPS:");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				SizePanelRoeMetz.NumSplitPlotsJTextField.setText(tempstr.substring(tmploc + 1).trim());
+				SizePanelRoeMetz.numSplitPlots = Integer.parseInt(tempstr.substring(tmploc + 1).trim());
+				continue;
+			}
+			loc = tempstr.indexOf("PAIRED READERS:");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				String str = tempstr.substring(tmploc + 1).trim();
+				if (str.equals("YES")){
+					SizePanelRoeMetz.ButtonPairedReadersYes.setSelected(true);
+					SizePanelRoeMetz.ButtonPairedReadersNo.setSelected(false);
+					SizePanelRoeMetz.pairedReadersFlag=1;
+				}else{
+					SizePanelRoeMetz.ButtonPairedReadersYes.setSelected(false);
+					SizePanelRoeMetz.ButtonPairedReadersNo.setSelected(true);
+					SizePanelRoeMetz.pairedReadersFlag=0;
+				}
+				continue;
+			}
+			loc = tempstr.indexOf("PAIRED NORMAL:");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				String str = tempstr.substring(tmploc + 1).trim();
+				if (str.equals("YES")){
+					SizePanelRoeMetz.ButtonPairedNormalsYes.setSelected(true);
+					SizePanelRoeMetz.ButtonPairedNormalsNo.setSelected(false);
+					SizePanelRoeMetz.pairedNormalsFlag=1;
+				}else{
+					SizePanelRoeMetz.ButtonPairedNormalsYes.setSelected(false);
+					SizePanelRoeMetz.ButtonPairedNormalsNo.setSelected(true);
+					SizePanelRoeMetz.pairedNormalsFlag=0;
+				}
+				continue;
+			}
+			loc = tempstr.indexOf("PAIRED DISEASE:");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				String str = tempstr.substring(tmploc + 1).trim();
+				if (str.equals("YES")){
+					SizePanelRoeMetz.ButtonPairedDiseasedYes.setSelected(true);
+					SizePanelRoeMetz.ButtonPairedDiseasedNo.setSelected(false);
+					SizePanelRoeMetz.pairedDiseasedFlag=1;
+				}else{
+					SizePanelRoeMetz.ButtonPairedDiseasedYes.setSelected(false);
+					SizePanelRoeMetz.ButtonPairedDiseasedNo.setSelected(true);
+					SizePanelRoeMetz.pairedDiseasedFlag=0;
+				}
+				continue;
+			}
+			loc = tempstr.indexOf("SEED FOR RNG: ");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				JTextField_seed.setText(tempstr.substring(tmploc + 1).trim());
+				continue;
+			}
+			loc = tempstr.indexOf("RANDOM STREAM");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				RandomStreamID = Integer.parseInt(tempstr.substring(tmploc + 1).trim());
+				continue;
+			}
+			loc = tempstr.indexOf("NUMBER OF EXPERIMENTS:");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				JTextField_Nexp.setText(tempstr.substring(tmploc + 1).trim());
+				continue;
+			}	
+			loc = tempstr.indexOf("MLE ANALYSIS:");
+			if (loc != -1) {
+				int tmploc = tempstr.indexOf(":");
+				String str = tempstr.substring(tmploc + 1).trim();
+				if (str.equals("NO")){
+				    useMLEbox.setSelected(false);
+				    useMLE = NO_MLE;
+				}else{
+				    useMLEbox.setSelected(true);
+				    useMLE = USE_MLE;
+				}
+				continue;
+			}	
 		}
 	}
 
@@ -707,6 +822,9 @@ public class RMGUInterface {
 			int fcReturn = fc.showOpenDialog((Component) e.getSource());
 			File f = fc.getSelectedFile();
 			parseCofVfile(f);
+			inputDirectory = fc.getCurrentDirectory();
+			String savedFileName = f.getPath();
+			inputFileName = savedFileName.substring(savedFileName.lastIndexOf("\\")+1,savedFileName.lastIndexOf(".irm"));	
 		}
 	}
 
@@ -715,7 +833,7 @@ public class RMGUInterface {
 	 * writes information to selected file.
 	 */
 	class SaveFieldsListener implements ActionListener {
-		@Override
+		@Override		
 		public void actionPerformed(ActionEvent e) {
 			try {
 				JFileChooser fc = new JFileChooser();
@@ -734,29 +852,50 @@ public class RMGUInterface {
 					}
 					FileWriter fw = new FileWriter(f.getAbsoluteFile());
 					BufferedWriter bw = new BufferedWriter(fw);
-					bw.write("AR0: " + v_AR0.getText() + "\n");
-					bw.write("AC0: " + v_AC0.getText() + "\n");
-					bw.write("ARC0: " + v_ARC0.getText() + "\n");
-					bw.write("AR1: " + v_AR1.getText() + "\n");
-					bw.write("AC1: " + v_AC1.getText() + "\n");
-					bw.write("ARC1: " + v_ARC1.getText() + "\n");
-					bw.write("BR0: " + v_BR0.getText() + "\n");
-					bw.write("BC0: " + v_BC0.getText() + "\n");
-					bw.write("BRC0: " + v_BRC0.getText() + "\n");
-					bw.write("BR1: " + v_BR1.getText() + "\n");
-					bw.write("BC1: " + v_BC1.getText() + "\n");
-					bw.write("BRC1: " + v_BRC1.getText() + "\n");
-					bw.write("R0: " + v_R0.getText() + "\n");
-					bw.write("C0: " + v_C0.getText() + "\n");
-					bw.write("RC0: " + v_RC0.getText() + "\n");
-					bw.write("R1: " + v_R1.getText() + "\n");
-					bw.write("C1: " + v_C1.getText() + "\n");
-					bw.write("RC1: " + v_RC1.getText() + "\n");
-					bw.write("uA: " + mu0.getText() + "\n");
-					bw.write("uB: " + mu1.getText() + "\n");
-					bw.write("n0: " + NnormalJTextField.getText() + "\n");
-					bw.write("n1: " + NdiseaseJTextField.getText() + "\n");
-					bw.write("nr: " + NreaderJTextField.getText() + "\n");
+					bw.write("AR0: " + v_AR0.getText() + "\r\n");
+					bw.write("AC0: " + v_AC0.getText() + "\r\n");
+					bw.write("ARC0: " + v_ARC0.getText() + "\r\n");
+					bw.write("AR1: " + v_AR1.getText() + "\r\n");
+					bw.write("AC1: " + v_AC1.getText() + "\r\n");
+					bw.write("ARC1: " + v_ARC1.getText() + "\r\n");
+					bw.write("BR0: " + v_BR0.getText() + "\r\n");
+					bw.write("BC0: " + v_BC0.getText() + "\r\n");
+					bw.write("BRC0: " + v_BRC0.getText() + "\r\n");
+					bw.write("BR1: " + v_BR1.getText() + "\r\n");
+					bw.write("BC1: " + v_BC1.getText() + "\r\n");
+					bw.write("BRC1: " + v_BRC1.getText() + "\r\n");
+					bw.write("R0: " + v_R0.getText() + "\r\n");
+					bw.write("C0: " + v_C0.getText() + "\r\n");
+					bw.write("RC0: " + v_RC0.getText() + "\r\n");
+					bw.write("R1: " + v_R1.getText() + "\r\n");
+					bw.write("C1: " + v_C1.getText() + "\r\n");
+					bw.write("RC1: " + v_RC1.getText() + "\r\n");
+					bw.write("uA: " + mu0.getText() + "\r\n");
+					bw.write("uB: " + mu1.getText() + "\r\n");
+					bw.write("n0: " + NnormalJTextField.getText() + "\r\n");
+					bw.write("n1: " + NdiseaseJTextField.getText() + "\r\n");
+					bw.write("nr: " + NreaderJTextField.getText() + "\r\n");
+					bw.write("Study Design \r\n");
+					bw.write("# of Split-Plot Groups: " + SizePanelRoeMetz.numSplitPlots + "\r\n");
+					if (SizePanelRoeMetz.pairedReadersFlag == 1)
+						bw.write("Paired Readers: Yes \r\n");
+					else
+						bw.write("Paired Readers: No \r\n");
+					if (SizePanelRoeMetz.pairedNormalsFlag == 1)
+						bw.write("Paired Normal: Yes \r\n");
+					else
+						bw.write("Paired Normal: No \r\n");
+					if (SizePanelRoeMetz.pairedDiseasedFlag == 1)
+						bw.write("Paired Disease: Yes \r\n");
+					else
+						bw.write("Paired Diesase: No \r\n");
+					bw.write("Simulation parameter \r\n");
+					bw.write("Seed for RNG: " + JTextField_seed.getText() + "\r\n");
+					bw.write("Number of Experiments: " + JTextField_Nexp.getText() + "\r\n");
+					if (useMLE == 1)
+						bw.write("MLE analysis: Yes" + "\r\n");
+					else
+						bw.write("MLE analysis: No" + "\r\n");
 					bw.close();
 				}
 			} catch (HeadlessException e1) {
@@ -911,9 +1050,13 @@ public class RMGUInterface {
 			sumDBRecordStat.verbose = false;
 			squareDBRecordStat.verbose = false;
 			sumSquareDBRecordStat.verbose = false;
-			
+			DBRecordStat.flagMLE = useMLE;
+			sumDBRecordStat.flagMLE = useMLE;
+			squareDBRecordStat.flagMLE = useMLE;
+			sumSquareDBRecordStat.flagMLE = useMLE;
 			long flagTotalVarIsNegative = 0;
-
+			trialResultArray = new double[(int) NexpEnd][21];
+			
 			SimRoeMetz currSimRoeMetz = new SimRoeMetz(u, var_t, RandomStreamI, sizePanel1);
 			
 			// initialize DBRecords
@@ -929,55 +1072,65 @@ public class RMGUInterface {
 			DBRecord.copy(DBRecordStat, squareDBRecordStat);			
 			DBRecord.square(squareDBRecordStat);
 			DBRecord.copy(squareDBRecordStat, sumSquareDBRecordStat);
+			saveTrialResult(DBRecordStat,0);
 			// write to disk
 			if (simSaveDirectory != null && !simSaveDirectory.equals("")) {
 				writeInputFile(sumDBRecordStat, filenameTime, NexpStart);
-				writeOutputFile(sumDBRecordStat, filenameTime, NexpStart);
 			}
 			
 			// continue the loop, add the simulation results to avgDBRecordStat
 			for (long i = NexpStart+1; i < NexpEnd; i++) {
+					// When seed = 123456, trial 68447 will generate a Inf. Using following function to check it. 
+					//int mm;
+					//if (i == 68447)
+					//    mm = 1;
+					// Sends data chunks to the "process" method.
+					// Below, the process method updates the progress bar.
+					publish(NexpCompleted_atomic.incrementAndGet());
+	
+					// SwingWorker supports bound properties, 
+					// which are useful for communicating with other threads.
+					// Two bound properties are predefined: progress and state.
+					// As with all bound properties, progress and state can be used 
+					// to trigger event-handling tasks on the event dispatch thread.
+					// The progress bound variable is an int value that can range from 0 to 100.
+					// It has a predefined setter method (the protected SwingWorker.setProgress)
+					// and a predefined getter method (the public SwingWorker.getProgress).
+					setProgress((int) (100 * (i-NexpStart) / NexpThisCore));
+				try{	
+					currSimRoeMetz.doSim(DBRecordStat);
+				} catch (Exception e) {
+					e.printStackTrace();
+				} 
+					
+					// Check if DBRecordStat.totalVar < 0
+					// Keep track of how often this happens
+					// Replace current simulation with a new simulation
+					if(DBRecordStat.totalVar < 0) {
+						flagTotalVarIsNegative++;
+						// pad current simulation result to trialResult even totalvar < 0. 
+						saveTrialResult(DBRecordStat,i);
+						continue;
+					}
+					// pad current simulation result to trialResult. 
+					saveTrialResult(DBRecordStat,i);
+					// Accumulate DBRecord
+					DBRecord.add(DBRecordStat, sumDBRecordStat);
+					// Accumulate squareDBRecord
+					DBRecord.copy(DBRecordStat, squareDBRecordStat);
+					DBRecord.square(squareDBRecordStat);
+					DBRecord.add(squareDBRecordStat, sumSquareDBRecordStat);
+					
+					// write to disk
+					if (simSaveDirectory != null && !simSaveDirectory.equals("")) {
+						writeInputFile(DBRecordStat, filenameTime, i);
+					}
+					if(DBRecordStat.verbose) {
+						System.out.print("ThreadName:"+Thread.currentThread().getName()+":");
+						System.out.print(i+1 + " of " + Nexp + " completed\n");
+					}
 
-				// Sends data chunks to the "process" method.
-				// Below, the process method updates the progress bar.
-				publish(NexpCompleted_atomic.incrementAndGet());
-
-				// SwingWorker supports bound properties, 
-				// which are useful for communicating with other threads.
-				// Two bound properties are predefined: progress and state.
-				// As with all bound properties, progress and state can be used 
-				// to trigger event-handling tasks on the event dispatch thread.
-				// The progress bound variable is an int value that can range from 0 to 100.
-				// It has a predefined setter method (the protected SwingWorker.setProgress)
-				// and a predefined getter method (the public SwingWorker.getProgress).
-				setProgress((int) (100 * (i-NexpStart) / NexpThisCore));
-				
-				currSimRoeMetz.doSim(DBRecordStat);
-				
-				// Check if DBRecordStat.totalVar < 0
-				// Keep track of how often this happens
-				// Replace current simulation with a new simulation
-				if(DBRecordStat.totalVar < 0) {
-					flagTotalVarIsNegative++;
-					continue;
-				}
-				
-				// Accumulate DBRecord
-				DBRecord.add(DBRecordStat, sumDBRecordStat);
-				// Accumulate squareDBRecord
-				DBRecord.copy(DBRecordStat, squareDBRecordStat);
-				DBRecord.square(squareDBRecordStat);
-				DBRecord.add(squareDBRecordStat, sumSquareDBRecordStat);
-				// write to disk
-				if (simSaveDirectory != null && !simSaveDirectory.equals("")) {
-					writeInputFile(DBRecordStat, filenameTime, i);
-					writeOutputFile(DBRecordStat, filenameTime, i);
-				}
-				if(DBRecordStat.verbose) {
-					System.out.print("ThreadName:"+Thread.currentThread().getName()+":");
-					System.out.print(i+1 + " of " + Nexp + " completed\n");
-				}
-
+			
 			}
 
 			sumDBRecordStat.flagTotalVarIsNegative = flagTotalVarIsNegative;
@@ -1006,13 +1159,42 @@ public class RMGUInterface {
 			firePropertyChange("done", 0, 1);
 		}
 	}
+	/**
+	 * function to save each trial result to trialResultArray
+	 * 
+	 */
+	private void saveTrialResult( DBRecord dBRecordStat, long trialID) {
+		double AUC_A       = dBRecordStat.AUCsReaderAvg[0];
+		double AUC_B       = dBRecordStat.AUCsReaderAvg[1];
+		double AUC_AminusAUC_B = AUC_A-AUC_B;
+		double totalVar    = dBRecordStat.totalVar;
+		double varA    = dBRecordStat.varA;
+		double varB    = dBRecordStat.varB;
+		double rejectNormal    = dBRecordStat.testStat.rejectNormal;
+		double rejectBDG    = dBRecordStat.testStat.rejectBDG;
+		double rejectHillis    = dBRecordStat.testStat.rejectHillis;
+		double pValueNormal = dBRecordStat.testStat.pValNormal;
+		double botCInormal = dBRecordStat.testStat.ciBotNormal;
+		double topCInormal = dBRecordStat.testStat.ciTopNormal;
+		double dfBDG = dBRecordStat.testStat.DF_BDG;
+		double pValueBDG = dBRecordStat.testStat.pValBDG;
+		double botCIBDG = dBRecordStat.testStat.ciBotBDG;
+		double topCIBDG = dBRecordStat.testStat.ciTopBDG;
+		double dfHills = dBRecordStat.testStat.DF_Hillis;
+		double pValueHillis = dBRecordStat.testStat.pValHillis;
+		double botCIHillis = dBRecordStat.testStat.ciBotHillis;
+		double topCIHillis = dBRecordStat.testStat.ciTopHillis;
+		double[] tempTrial = {trialID+1, AUC_A,AUC_B,AUC_AminusAUC_B ,varA,varB,totalVar,pValueNormal,botCInormal,topCInormal,rejectNormal,dfBDG,pValueBDG,botCIBDG,topCIBDG,rejectBDG,dfHills,pValueHillis,botCIHillis,topCIHillis,rejectHillis};
+		trialResultArray[(int) trialID] = tempTrial;
+	}
 
 	/**
 	 * Handler for "Perform Simulation Experiments" button. Sets up
 	 * multi-threaded, multi-core spread of experiment tasks if possible.
 	 * 
 	 */
-	class DoSimBtnListener implements ActionListener {
+	
+	public class DoSimBtnListener implements ActionListener {
 		int finishedTasks = 0;
 //		final int numCores = Runtime.getRuntime().availableProcessors();
 		final int numCores = 1;
@@ -1021,8 +1203,12 @@ public class RMGUInterface {
 
 		@Override
 		public void actionPerformed(ActionEvent e) {
+			doSimulationAnalysis();
+		}
+
+		public void doSimulationAnalysis() {
+			// TODO Auto-generated method stub
 			try {
-				
 				SizePanelRoeMetz.NreaderJTextField = NreaderJTextField;
 				SizePanelRoeMetz.NnormalJTextField = NnormalJTextField;
 				SizePanelRoeMetz.NdiseaseJTextField = NdiseaseJTextField;
@@ -1049,13 +1235,14 @@ public class RMGUInterface {
 				long NexpStart, NexpEnd;
 
 				// Check if saving results
-				if (simSaveDirectory == null || simSaveDirectory.equals("")) {
-					JOptionPane.showMessageDialog(
-							RoeMetz1.getFrame(),
-						"Save directory not specified.\nExperiment output files will not be written.",
-						"Warning", JOptionPane.WARNING_MESSAGE);
+				if (!RoeMetz.doValidation){
+					if (simSaveDirectory == null || simSaveDirectory.equals("")) {
+						JOptionPane.showMessageDialog(
+								RoeMetz1.getFrame(),
+							"Save directory not specified.\nExperiment output files will not be written.",
+							"Warning", JOptionPane.WARNING_MESSAGE);
+					}
 				}
-
 				// Create string representation of current time to use in filename
 				DateFormat dateForm = new SimpleDateFormat("yy-MM-dd-HH-mm-ss");
 				Date currDate = new Date();
@@ -1093,7 +1280,9 @@ public class RMGUInterface {
 				for (int i = 0; i < numCoresToUse; i++) {
 					final int taskNum = i;
 					WELL1024 RandomStreamI = new WELL1024();
-					
+					for (int ns= 1; ns<RandomStreamID; ns++){
+						RandomStreamI = new WELL1024();
+					}
 					NexpStart = NexpPerCore * i;
 					NexpEnd = NexpStart + NexpPerCore;
 					// Last core must do more experiments 
@@ -1118,6 +1307,12 @@ public class RMGUInterface {
 								if (finishedTasks == numCoresToUse) {
 									finishedTasks = 0;
 									processResults(simSaveDirectory,filenameTime);
+									if(RoeMetz.doValidation){
+										analysisExportListener analysisExportListener1 = new analysisExportListener(avgDBRecordStat,"Simulation",StatPanel1);
+										analysisExportListener1.exportResult();
+										exportTrialResult(null);
+										System.exit(0);
+									}
 								}
 							} catch (InterruptedException e) {
 								e.printStackTrace();
@@ -1143,7 +1338,7 @@ public class RMGUInterface {
 			}
 			
 		}
-
+		
 		/**
 		 * Makes a bar indicating the amount of progress over all simulation
 		 * experiments
@@ -1159,6 +1354,7 @@ public class RMGUInterface {
 			pane.add(simProgress);
 			progDialog.setContentPane(pane);
 			progDialog.pack();
+			if(!RoeMetz.doValidation)
 			progDialog.setVisible(true);
 		}
 
@@ -1170,7 +1366,7 @@ public class RMGUInterface {
 			progDialog.setVisible(false);
 
 			DBRecord DBRecordStat = new DBRecord();
-			DBRecord avgDBRecordStat = new DBRecord();
+			avgDBRecordStat = new DBRecord();
 			DBRecord squareDBRecordStat = new DBRecord();
 			DBRecord avgSquareDBRecordStat = new DBRecord();
 			
@@ -1190,7 +1386,7 @@ public class RMGUInterface {
 				squareDBRecordStat = results[i][2];
 			}
 
-			if(avgDBRecordStat.flagTotalVarIsNegative > 0) {
+			if(avgDBRecordStat.flagTotalVarIsNegative > 0 &&!RoeMetz.doValidation) {
 	 			JFrame frame = new JFrame();
 	 			JOptionPane.showMessageDialog(frame,
 						"There were " + avgDBRecordStat.flagTotalVarIsNegative + 
@@ -1203,41 +1399,46 @@ public class RMGUInterface {
 			}
 			
  			final double Nexp = Integer.valueOf(JTextField_Nexp.getText());
-			DBRecord.scale(avgDBRecordStat, 1.0/Nexp);
-			DBRecord.scale(avgSquareDBRecordStat, 1.0/Nexp);
+ 			double UseTrial = Nexp - avgDBRecordStat.flagTotalVarIsNegative;
+			DBRecord.scale(avgDBRecordStat, 1.0/UseTrial);
+			DBRecord.scale(avgSquareDBRecordStat, 1.0/UseTrial);
 
 			// Calculate second order moments
 			DBRecord.copy(avgSquareDBRecordStat, squareDBRecordStat);
-			DBRecord.scale(squareDBRecordStat, Nexp/(Nexp-1));
+			DBRecord.scale(squareDBRecordStat, UseTrial/(UseTrial-1));
 			// Calculate squared means
 			DBRecord.copy(avgDBRecordStat, DBRecordStat);
 			DBRecord.square(DBRecordStat);
-			DBRecord.scale(DBRecordStat, -Nexp/(Nexp-1));
+			DBRecord.scale(DBRecordStat, -UseTrial/(UseTrial-1));
 			// Calculate variances: N/(N-1) * (avg(x^2) - avg(x)^2)
 			DBRecord.add(DBRecordStat, squareDBRecordStat);
 			// Rename result
-			DBRecord varDBRecordStat = squareDBRecordStat;
+			varDBRecordStat = squareDBRecordStat;
 			squareDBRecordStat = null;
 			// Reset DBRecordStat: Access one MC trial
 			DBRecordStat = results[0][0];
 			
 			avgDBRecordStat.Decompositions();
-			
-			StatPanel StatPanel1 = new StatPanel(RoeMetz1.getFrame(), avgDBRecordStat);
+			StatPanel1 = new StatPanel(RoeMetz1.getFrame(), avgDBRecordStat);
 			StatPanel1.setStatPanel();
 			StatPanel1.setTable1();
 			StatPanel1.setMCresults(avgDBRecordStat, varDBRecordStat);
 			
-			JDialog simOutput = new JDialog(RoeMetz1.getFrame(), "Simulation Results");
+			JDialog simOutput = new JDialog(RoeMetz1.getFrame(), "Simulation Results: MC means");
 			simOutput.add(StatPanel1.JPanelStat);
+			JButton simulationExport= new JButton("Export Analysis Result");
+			simulationExport.addActionListener(new analysisExportListener(avgDBRecordStat,"Simulation",StatPanel1));			
+			simOutput.add(simulationExport, BorderLayout.PAGE_END);
 			simOutput.pack();
+			if(!RoeMetz.doValidation)
 			simOutput.setVisible(true);
-
 //			writeSummaryFile(simSaveDirectory, "Summary of Simulation Results",
 //					"results-simulation-" + filenameTime, allDecomps,
 //					allCoeffs, avgdAUC);
 
+
 		}
+        
 
 		/**
 		 * Creates a pop-up table to display results of the simulations.
@@ -1404,8 +1605,8 @@ public class RMGUInterface {
 	 * thread and displays results in a pop-up table.
 	 * 
 	 */
-	class DoNumericalIntegrationBtnListener implements ActionListener {
-		DBRecord DBRecordNumerical; // averaged decompositions of cofv
+	public class DoNumericalIntegrationBtnListener implements ActionListener {
+		public DBRecord DBRecordNumerical; // averaged decompositions of cofv
 		
 		@Override
 		public void actionPerformed(ActionEvent e) {
@@ -1415,11 +1616,19 @@ public class RMGUInterface {
 			SizePanelRoeMetz.NdiseaseJTextField = NdiseaseJTextField;
 
 			System.out.println(NreaderJTextField.getText());
-
+			doNumericalAnalysisSEQ();
+		}
+        
+		public void doNumericalAnalysisBKG() {
+			// TODO Auto-generated method stub
 			try {
 				double[] u = getMeans();
 				double[] var_t = getVariances();
-				
+				SizePanelRoeMetz.NreaderJTextField = NreaderJTextField;
+				SizePanelRoeMetz.NnormalJTextField = NnormalJTextField;
+				SizePanelRoeMetz.NdiseaseJTextField = NdiseaseJTextField;
+				System.out.println(NreaderJTextField.getText());
+				SizePanel SizePanelRoeMetz1 =SizePanelRoeMetz;
 				final CalculateCofV calcTask = new CalculateCofV(u, var_t, SizePanelRoeMetz);
 				calcTask.addPropertyChangeListener(new PropertyChangeListener() {
 					public void propertyChange(PropertyChangeEvent evt) {
@@ -1427,6 +1636,7 @@ public class RMGUInterface {
 							try {
 								DBRecordNumerical = calcTask.get();
 								processResults();
+								processDone = true;
 							} catch (InterruptedException e) {
 								e.printStackTrace();
 							} catch (ExecutionException e) {
@@ -1443,7 +1653,28 @@ public class RMGUInterface {
 						JOptionPane.ERROR_MESSAGE);
 			}
 		}
-
+		
+		public void doNumericalAnalysisSEQ() {
+			// TODO Auto-generated method stub
+			try {
+				double[] u = getMeans();
+				double[] var_t = getVariances();
+				SizePanelRoeMetz.NreaderJTextField = NreaderJTextField;
+				SizePanelRoeMetz.NnormalJTextField = NnormalJTextField;
+				SizePanelRoeMetz.NdiseaseJTextField = NdiseaseJTextField;
+				System.out.println(NreaderJTextField.getText());
+				CalcGenRoeMetz.genRoeMetz(u, var_t, SizePanelRoeMetz);
+				DBRecordNumerical = CalcGenRoeMetz.DBRecordNumerical;
+				processResults();
+			} catch (NumberFormatException e1) {
+				JOptionPane.showMessageDialog(RoeMetz1.getFrame(),
+						"Incorrect / Incomplete Input", "Error",
+						JOptionPane.ERROR_MESSAGE);
+			}
+		}
+		
+		
+		
 		/**
 		 * Gets calculation results, 
 		 * calculates decomposition coefficients and
@@ -1452,15 +1683,24 @@ public class RMGUInterface {
 		public void processResults() {
 
 			DBRecordNumerical.Decompositions();
-			
-			StatPanel StatPanelNumerical = new StatPanel(RoeMetz1.getFrame(), DBRecordNumerical);
+			DBRecordNumerical.NreaderDB=DBRecordNumerical.Nreader;
+			DBRecordNumerical.NnormalDB=DBRecordNumerical.Nnormal;
+			DBRecordNumerical.NdiseaseDB=DBRecordNumerical.Ndisease;
+			DBRecordNumerical.InputFile1 = new InputFile();
+			for (int i=1;i<DBRecordNumerical.Nreader+1;i++)
+			DBRecordNumerical.InputFile1.readerIDs.put(Integer.toString(i), i);
+			StatPanelNumerical = new StatPanel(RoeMetz1.getFrame(), DBRecordNumerical);
 			StatPanelNumerical.setStatPanel();
 			StatPanelNumerical.setTable1();
 
 			JDialog numericalOutput = new JDialog(RoeMetz1.getFrame(), "Numerical Integration Results");
 //			numericalOutput.add(studyDesignJPanel);
 			numericalOutput.add(StatPanelNumerical.JPanelStat);
+			JButton numericalOutputExport= new JButton("Export Analysis Result");
+			numericalOutputExport.addActionListener(new analysisExportListener(DBRecordNumerical,"Numerical",StatPanelNumerical));			
+			numericalOutput.add(numericalOutputExport, BorderLayout.PAGE_END);
 			numericalOutput.pack();
+			if(!RoeMetz.doValidation)
 			numericalOutput.setVisible(true);
 
 			DateFormat dateForm = new SimpleDateFormat("yy-MM-dd-HH-mm-ss");
@@ -1471,6 +1711,8 @@ public class RMGUInterface {
 //					"Summary of Calculation Results", "calc-results-"
 //							+ filenameTime, allDecomps, allCoeffs, AUCs);
 		}
+
+
 
 	}
 	
@@ -1586,60 +1828,6 @@ public class RMGUInterface {
 		} catch (IOException e) {
 			e.printStackTrace();
 		}
-	}
-
-
-
-	/**
-	 * Writes component info, p-values, and confidence interval of a single study to file
-	 * @param filename Timestamp based filename to identify group of experiments
-	 * @param l Individual experiment number
-	 */
-	public void writeOutputFile(DBRecord currDBRecord, String filename, long l) {
-
-		StatTest tempStat = new StatTest(currDBRecord);
-		System.out.println("p-val = " + tempStat.pValNormal);
-		System.out.println("CI = " + tempStat.ciBotNormal + ", "
-				+ tempStat.ciTopNormal);
-
-		try {
-			File file = new File(simSaveDirectory + "/" + "sim-comp-"
-					+ filename + "-" + String.format("%05d", l) + ".txt");
-			if (!file.exists()) {
-				file.createNewFile();
-			}
-			FileWriter fw = new FileWriter(file.getAbsoluteFile());
-			BufferedWriter bw = new BufferedWriter(fw);
-
-			bw.write("BDG components from simulated study " + filename + "-"
-					+ l + "\n");
-
-			int col = currDBRecord.BDG[0].length;
-			int row = currDBRecord.BDG.length;
-			DecimalFormat df = new DecimalFormat("0.###E0");
-			for (int i = 0; i < row; i++) {
-				String temp = "";
-				for (int j = 0; j < col; j++) {
-					int totalWidth = 14;
-					int numWidth = df.format(currDBRecord.BDG[i][j]).length();
-					int numSpaces = totalWidth - numWidth;
-					temp = temp + df.format(currDBRecord.BDG[i][j]);
-					for (int x = 0; x < numSpaces; x++) {
-						temp = temp + " ";
-					}
-				}
-				temp = temp + "\n";
-				bw.write(temp);
-			}
-
-			bw.write("p-value: " + tempStat.pValNormal + "\n");
-			bw.write("Confidence Interval: (" + tempStat.ciBotNormal + ", "
-					+ tempStat.ciTopNormal + ")\n");
-			bw.close();
-		} catch (IOException e) {
-			e.printStackTrace();
-		}
-
 	}
 
 	/**
@@ -2150,6 +2338,167 @@ public class RMGUInterface {
 		String output = threeDec.format(Math.sqrt(currVar));
 		varLabel.setText("sqrt(Var) = " + output);
 	}
+	public class analysisExportListener implements ActionListener {
+		private DBRecord DB1;
+		private String analysisMethod;
+		private StatPanel StatPanelIn;
+		@Override
+     	public void actionPerformed(ActionEvent e) {
+			exportResult();
 
+		 }
+		public void exportResult() {
+			// TODO Auto-generated method stub
+			try {
+				int fcReturn;
+				File fGUI = null;
+				File fVal = null;
+				File outputPackage = null;
+				String savedFileName;
+				if (!RoeMetz.doValidation){
+					JFileChooser fc = new JFileChooser();
+					DateFormat dateForm = new SimpleDateFormat("yyyyMMddHHmmss");
+					Date currDate = new Date();
+					String fileTime = dateForm.format(currDate);
+					String exportFolderName = inputFileName + analysisMethod + "Result" + fileTime;
+					if (outputDirectory!=null){
+						fc.setSelectedFile(new File(outputDirectory+"//"+exportFolderName));						
+					}else if (inputDirectory!=null){
+						fc.setSelectedFile(new File(inputDirectory+"//"+exportFolderName));
+					}else{
+						fc.setSelectedFile(new File(exportFolderName));
+					}
+					fcReturn = fc.showSaveDialog(null);
+					outputPackage = fc.getSelectedFile();					
+					if(!outputPackage.exists() && !outputPackage.isDirectory()) 
+						outputPackage.mkdir();		
+					fGUI = new File (outputPackage +"//" + analysisMethod +"Summary.omrmc" );
+					fVal = new File (outputPackage +"//" + analysisMethod +"Summary.csv");
+					outputDirectory = fc.getCurrentDirectory();
+					savedFileName = fc.getSelectedFile().getName();
+				}else{
+					fcReturn = 0;					
+					File outputDir = new File (validateFunction.inputFile.getParent()+"//"+"output");
+					if(!outputDir.exists() && !outputDir.isDirectory()) 
+						outputDir.mkdir();					
+					String FileName=validateFunction.inputFile.getName();
+					FileName= FileName.substring(0,FileName.lastIndexOf("."));
+					String exportFileName = FileName +analysisMethod +"Summary" +".csv";
+					fVal = new File (outputDir +"//" + exportFileName);
+					savedFileName = exportFileName;
+				}
+				
+				
+				if (fcReturn == JFileChooser.APPROVE_OPTION) {
+
+					String reportGUI = "";
+					String reportValidation = "";
+					if (analysisMethod.equals("Simulation")){
+						if (!RoeMetz.doValidation){
+							reportGUI = reportGUI + "iRoeMetz simulation summary statistics from " + RoeMetz.versionName + "\r\n";
+							reportGUI = reportGUI + "Summary statistics written to file named:" + "\r\n";
+							reportGUI = reportGUI + savedFileName + "\r\n" + "\r\n";
+							reportGUI = exportToFile.exoprtiRoeMetzSet(reportGUI,SizePanelRoeMetz);
+							reportGUI = reportGUI + "Seed for RNG: " + JTextField_seed.getText() + "\r\n";
+							reportGUI = reportGUI + "Number of Experiments: " + JTextField_Nexp.getText() + "\r\n" + "\r\n";
+							reportGUI = reportGUI + "\r\n************************************************************\r\n";
+							reportGUI = exportToFile.exportSummary(reportGUI, DB1);	
+							reportGUI = exportToFile.exportStatPanel(reportGUI, DB1, StatPanelIn);						
+							reportGUI = exportToFile.exportMCvariance(reportGUI, varDBRecordStat);
+							reportGUI = exportToFile.exportTable1(reportGUI, DB1);
+							reportGUI = exportToFile.exportTable2(reportGUI, DB1);
+						    exportTrialResult(outputPackage);
+						}
+						reportValidation = "MCmeanOrvar,AUC_A,AUC_B,AUC_AminusAUC_B ,varA,varB,totalVar,pValueNormal,botCInormal,topCInormal,rejectNormal,dfBDG,pValueBDG,botCIBDG,topCIBDG,rejectBDG,dfHills,pValueHillis,botCIHillis,topCIHillis,rejectHillis" + "\r\n";
+						reportValidation = exportToFile.exportMCmeanValidation(reportValidation,DB1);
+						reportValidation = exportToFile.exportMCvarianceValidation(reportValidation,varDBRecordStat);
+						
+					}else{
+						if (!RoeMetz.doValidation){
+							reportGUI = reportGUI + "iRoeMetz Numerical summary statistics from " + RoeMetz.versionName + "\r\n";
+							reportGUI = reportGUI + "Summary statistics written to file named:" + "\r\n";
+							reportGUI = reportGUI + savedFileName + "\r\n" + "\r\n";
+							reportGUI = exportToFile.exoprtiRoeMetzSet(reportGUI,SizePanelRoeMetz);
+							reportGUI = reportGUI + "\r\n************************************************************\r\n";
+							reportGUI = exportToFile.exportSummary(reportGUI, DB1);	
+							reportGUI = exportToFile.exportStatPanel(reportGUI, DB1, StatPanelIn);	
+							reportGUI = exportToFile.exportTable1(reportGUI, DB1);
+							reportGUI = exportToFile.exportTable2(reportGUI, DB1);
+						}
+						reportValidation = "NumAUC_A,NumAUC_B,NumAUC_AB,NumvarAUC_A,NumvarAUC_B,NumvarAUC_AB" + "\r\n";
+						reportValidation = exportToFile.exportNumValidation(reportValidation,DB1);
+						
+					}
+					FileWriter fwVal = new FileWriter(fVal.getAbsoluteFile());
+					BufferedWriter bwVal = new BufferedWriter(fwVal);
+					bwVal.write(reportValidation);
+					bwVal.close();
+					if (!RoeMetz.doValidation){
+						FileWriter fwGUI = new FileWriter(fGUI.getAbsoluteFile());
+						BufferedWriter bwGUI = new BufferedWriter(fwGUI);
+						bwGUI.write(reportGUI);
+						bwGUI.close();
+						JOptionPane.showMessageDialog(
+								RoeMetz1.getFrame(), analysisMethod+" has been succeed export to " + outputDirectory + " !\n"+ "Filename = " +savedFileName, 
+								"Exported", JOptionPane.INFORMATION_MESSAGE);
+					}
+				}
+			} catch (HeadlessException e1) {
+				e1.printStackTrace();
+			} catch (IOException e1) {
+				e1.printStackTrace();
+			} 
+				
+		}
+		public analysisExportListener(DBRecord DBtemp, String tempanalysisMethod, StatPanel tempStatPanel){
+			DB1 = DBtemp;
+			analysisMethod = tempanalysisMethod;
+			StatPanelIn = tempStatPanel;
+ 		}
+	
+	}
+	private void exportTrialResult(File GUIoutputDir) {
+		// TODO Auto-generated method stub
+		try {
+			File f;	
+			if (RoeMetz.doValidation){
+				File outputDir = new File (validateFunction.inputFile.getParent()+"//"+"output");				
+				String FileName=validateFunction.inputFile.getName();
+				FileName= FileName.substring(0,FileName.lastIndexOf("."));
+				String exportFileName = FileName +"simulationTrials" +".csv";
+				f = new File (outputDir +"//" + exportFileName);
+				if (!f.exists()) {
+					f.createNewFile();
+				}
+			}else{
+				f = new File (GUIoutputDir + "//" + "simulationTrials" +".csv");
+			}
+			FileWriter fw;		
+			fw = new FileWriter(f.getAbsoluteFile());
+			BufferedWriter bw = new BufferedWriter(fw);
+			String [] trialResultTitle = new String[] {"TrialID","AUCA","AUCB","AUCAminusB","varAUCA","varAUCB","varAUCAandB","pValueNormal","botCInormal","topCInormal",
+					"rejectNormal","dfBDG","pValueBDG","botCIBDG","topCIBDG","rejectBDG","dfHills","pValueHillis","botCIHillis","topCIHillis","rejectHillis"};
+			for (int i=0;i<trialResultTitle.length;i++){
+				bw.write(trialResultTitle[i]+",");
+			}
+			bw.write("\n");
+		    for (int i=0;i<trialResultArray.length;i++){
+		    	bw.write(Double.toString(trialResultArray[i][0])+",");
+		        for (int j=1;j<trialResultArray[0].length;j++){		
+		        	if (Double.isNaN(trialResultArray[i][j])){
+		        		bw.write("NaN,");
+		        	}else{
+		        		bw.write(fourDecE.format(trialResultArray[i][j])+",");
+		        	}
+		        }
+		        bw.write("\n");
+		    }
+			//bw.write(trialResultArrayfollow);
+			bw.close();
+		} catch (IOException e) {
+			// TODO Auto-generated catch block
+			e.printStackTrace();
+		}
+	}
 
 }

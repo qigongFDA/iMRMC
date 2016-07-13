@@ -19,6 +19,7 @@
 package roemetz.core;
 
 import java.awt.Container;
+import java.util.Scanner;
 
 import javax.swing.*;
 
@@ -30,10 +31,12 @@ import roemetz.gui.RMGUInterface;
  * @author Rohan Pathare
  */
 public class RoeMetz extends JApplet {
-
+    
+	public static String versionName;
 	private static final long serialVersionUID = 1L;
 	private static JFrame iRMFrame;
-
+    public static RMGUInterface RMGUInterface1;
+    public static boolean doValidation = false;
 	/**
 	 * Gets the application frame, used when launching dialog boxes
 	 * 
@@ -52,7 +55,8 @@ public class RoeMetz extends JApplet {
 		resize(6, 6);
 
 		Container cp = getContentPane();
-		new RMGUInterface(this, cp);
+		RMGUInterface1 = new RMGUInterface(this, cp);
+		
 	}
 
 	/**
@@ -73,7 +77,13 @@ public class RoeMetz extends JApplet {
 		} catch (UnsupportedLookAndFeelException e) {
 			e.printStackTrace();
 		}
+		String inputFileFullName = "";
+		if (args.length != 0){
+			inputFileFullName = args[0];
+			doValidation = true;
+		}
 		run(new RoeMetz(), 900, 600);
+		validateFunction.validateFunction(RMGUInterface1,inputFileFullName);
 	}
 
 	/**
@@ -85,6 +95,7 @@ public class RoeMetz extends JApplet {
 	 * @param height Height of the application frame in pixels
 	 */
 	public static void run(JApplet applet, int width, int height) {
+		versionName = "iRoeMetz 2.0";
 		iRMFrame = new JFrame("iRoeMetz 2.0");
 		iRMFrame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 		iRMFrame.getContentPane().add(applet);
@@ -92,6 +103,7 @@ public class RoeMetz extends JApplet {
 		iRMFrame.setSize(width, height);
 		applet.init();
 		applet.start();
+		if (!doValidation)
 		iRMFrame.setVisible(true);
 	}
 }

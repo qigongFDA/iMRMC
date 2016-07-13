@@ -24,12 +24,19 @@ package mrmc.gui;
 
 import java.awt.BorderLayout;
 import java.awt.Component;
+import java.awt.HeadlessException;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.ItemEvent;
 import java.awt.event.ItemListener;
+import java.io.BufferedWriter;
 import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.TreeMap;
 
 import javax.swing.GroupLayout;
 import javax.swing.JButton;
@@ -48,11 +55,13 @@ import javax.swing.filechooser.FileNameExtensionFilter;
 import mrmc.chart.BarGraph;
 import mrmc.chart.ROCCurvePlot;
 import mrmc.chart.StudyDesignPlot;
-
-
+import mrmc.chart.WrapLayout;
+import mrmc.chart.exportToFile;
 import mrmc.core.DBRecord;
 import mrmc.core.InputFile;
+import mrmc.core.StatTest;
 
+import org.jfree.data.xy.XYSeries;
 import org.jfree.ui.RefineryUtilities;
 
 
@@ -71,7 +80,6 @@ public class InputFileCard {
 	private InputFile InputFile1;
 	private DBRecord DBRecordStat;
 	private DBRecord DBRecordSize;
-
 	JTextField JTextFilename;
 	public final static int USE_MLE = 1;
 	public final static int NO_MLE = 0;
@@ -88,7 +96,7 @@ public class InputFileCard {
 		
 		JTextFilename.setText("");
 		FlagMLE = NO_MLE;
-
+		mleCheckBox.setSelected(false);
 		chooseA.removeAllItems();
 		chooseB.removeAllItems();
 		chooseA.addItem("Choose Modality A");
@@ -114,7 +122,7 @@ public class InputFileCard {
 		 * Elements of RawStudyCardRow1
 		 */
 		// Browse for input file
-		JLabel studyLabel = new JLabel(".imrmc file  ");
+		JLabel studyLabel = new JLabel(".imrmc or .csv file  ");
 		JTextFilename = new JTextField(20);
 		JButton browseButton = new JButton("Browse...");
 		browseButton.addActionListener(new brwsButtonListener());
@@ -207,14 +215,23 @@ public class InputFileCard {
 		public void actionPerformed(ActionEvent e) {
 			
 			GUI.resetGUI();
-			
+			if  (GUInterface.selectedInput == GUInterface.DescInputChooseMode){
+				JOptionPane.showMessageDialog(GUI.MRMCobject.getFrame(),
+						"Please choose one kind of input file.", "Error",
+						JOptionPane.ERROR_MESSAGE);
+				return;
+			}
 			JFileChooser fc = new JFileChooser();
 			FileNameExtensionFilter filter = new FileNameExtensionFilter(
-					"iMRMC Input Files (.imrmc)", "imrmc");
+					"iMRMC Input Files (.imrmc or csv)", "csv","imrmc");
+		
+			if (GUI.inputfileDirectory!=null)
+				fc.setCurrentDirectory(GUI.inputfileDirectory);
+			
 			fc.setFileFilter(filter);
 			int returnVal = fc.showOpenDialog((Component) e.getSource());
 			if( returnVal==JFileChooser.CANCEL_OPTION || returnVal==JFileChooser.ERROR_OPTION) return;
-			
+			GUI.inputfileDirectory = fc.getCurrentDirectory(); //save last time visit directory
 			/*
 			 *  Get a pointer to the input file and the filename
 			 */
@@ -222,12 +239,12 @@ public class InputFileCard {
 			if( f==null ) return;
 			InputFile1.filename = f.getPath();
 			JTextFilename.setText(f.getPath());
-
+//			GUI.inputfileDirectory = f.getPath();
 			/*
 			 *  Read the .imrmc input file, check for exceptions
 			 */				
 			try {
-				InputFile1.ReadInputFile();
+				InputFile1.ReadInputFile(GUI);
 			} catch (IOException except) {
 				except.printStackTrace();
 				JOptionPane.showMessageDialog
@@ -322,10 +339,10 @@ public class InputFileCard {
 						"Choose Modality", JOptionPane.INFORMATION_MESSAGE,
 						null);
 				designMod1 = (String) choose1.getSelectedItem();
-				String[][] design = InputFile1.getStudyDesign( (String) choose1.getSelectedItem());
+				TreeMap<String,String[][]> StudyDesignData = InputFile1.getStudyDesign( (String) choose1.getSelectedItem());
 				final StudyDesignPlot chart = new StudyDesignPlot(
-						"Study Design: Modality " + designMod1, "Case",
-						"Reader", design);
+						"Study Design: Modality "+designMod1, designMod1, "Case Index",
+						"Reader", StudyDesignData,InputFile1.filename);
 				chart.pack();
 				RefineryUtilities.centerFrameOnScreen(chart);
 				chart.setVisible(true);
@@ -410,7 +427,8 @@ public class InputFileCard {
 			} else {
 				FlagMLE = NO_MLE;
 			}
-
+			DBRecordStat.flagMLE = FlagMLE;
+			DBRecordSize.flagMLE = FlagMLE;
 			GUI.StatPanel1.resetStatPanel();
 			GUI.StatPanel1.resetTable1();
 			GUI.SizePanel1.resetSizePanel();
@@ -478,7 +496,6 @@ public class InputFileCard {
 	class varAnalysisListener implements ActionListener {
 		public void actionPerformed(ActionEvent e) {
 			System.out.println("MRMC Variance analysis button clicked. RawStudyCard.varAnalysisListener");
-			
 			// Check that .imrmc input file has been read
 			// If there is no JTextFilename, then reader scores have not been read
 			String name = JTextFilename.getText();
@@ -486,7 +503,7 @@ public class InputFileCard {
 			if (name.equals(null) || name.equals("")) {
 				JFrame frame = GUI.MRMCobject.getFrame();
 				JOptionPane.showMessageDialog(frame, 
-						"Please browse for .imrmc input file", " Error",
+						"Please browse for .imrmc or.csv input file", " Error",
 						JOptionPane.ERROR_MESSAGE);
 				return;
 			}
@@ -508,10 +525,8 @@ public class InputFileCard {
 							JOptionPane.ERROR_MESSAGE);
 				return;
 			}
-			
 			// Analyze observerData
 			DBRecordStat.DBRecordStatFill(InputFile1, DBRecordStat);
-			
 			// Check if variance estimate is negative
 			if(DBRecordStat.totalVar > 0)
 				GUI.hasNegative = false;
@@ -528,12 +543,16 @@ public class InputFileCard {
 					System.out.println("cancel");
 				} else if (JOptionPane.YES_OPTION == result) {
 					FlagMLE = USE_MLE;
+					DBRecordStat.flagMLE = FlagMLE;
+					mleCheckBox.setSelected(true);
+					DBRecordStat.totalVar=DBRecordStat.totalVarMLE;
+					DBRecordStat.SE=Math.sqrt(DBRecordStat.totalVar);
+					DBRecordStat.testStat = new StatTest(DBRecordStat);
 				} else if (JOptionPane.NO_OPTION == result) {
 					FlagMLE = NO_MLE;
 				}
 
 			}
-
 			// Update GUI
 			DBRecordStat.flagMLE = FlagMLE;
 			DBRecordSize.flagMLE = FlagMLE;
@@ -557,25 +576,30 @@ public class InputFileCard {
 	class showAUCsButtonListener implements ActionListener {
 		public void actionPerformed(ActionEvent e) {
 			if( DBRecordStat.totalVar > 0.0) {
-			JFrame JFrameAUC= new JFrame("AUCs for each reader and modality");
-			RefineryUtilities.centerFrameOnScreen(JFrameAUC);
-			JFrameAUC.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
-
-			Object[] colNames = { "ReaderID", "AUC "+DBRecordStat.modalityA, "AUC "+DBRecordStat.modalityB };
-			Object[][] rowContent = new String[(int) DBRecordStat.Nreader][3];
-			int i=0;
-			for(String desc_temp : InputFile1.readerIDs.keySet() ) {
-				rowContent[i][0] = desc_temp;
-				rowContent[i][1] = Double.toString(DBRecordStat.AUCs[i][0]);
-				rowContent[i][2] = Double.toString(DBRecordStat.AUCs[i][1]);
-				i++;
-			}
-
-			JTable tableAUC = new JTable(rowContent, colNames);
-			JScrollPane scrollPaneAUC = new JScrollPane(tableAUC);
-			JFrameAUC.add(scrollPaneAUC, BorderLayout.CENTER);
-			JFrameAUC.setSize(600, 300);
-			JFrameAUC.setVisible(true);
+				JFrame JFrameAUC= new JFrame("AUCs for each reader and modality");
+				RefineryUtilities.centerFrameOnScreen(JFrameAUC);
+				JFrameAUC.setDefaultCloseOperation(JFrame.DISPOSE_ON_CLOSE);
+	
+				Object[] colNames = { "ReaderID", "AUC "+DBRecordStat.modalityA, "AUC "+DBRecordStat.modalityB };
+				Object[][] rowContent = new String[(int) DBRecordStat.Nreader][3];
+				int i=0;
+				for(String desc_temp : InputFile1.readerIDs.keySet() ) {
+					rowContent[i][0] = desc_temp;
+					rowContent[i][1] = Double.toString(DBRecordStat.AUCs[i][0]);
+					rowContent[i][2] = Double.toString(DBRecordStat.AUCs[i][1]);
+					i++;
+				}
+	
+				JTable tableAUC = new JTable(rowContent, colNames);
+				JScrollPane scrollPaneAUC = new JScrollPane(tableAUC);
+				JFrameAUC.add(scrollPaneAUC, BorderLayout.CENTER);
+				JFrameAUC.setSize(600, 300);
+				JFrameAUC.setVisible(true);
+				JButton exportreader = new JButton("Export");
+				exportreader.addActionListener(new exportreaderresult());
+				JPanel exportPanel = new JPanel(new WrapLayout());
+				exportPanel.add(exportreader);
+				JFrameAUC.add(exportPanel, BorderLayout.PAGE_END);
 			}
 			else {
 				JOptionPane.showMessageDialog(GUI.MRMCobject.getFrame(),
@@ -583,6 +607,57 @@ public class InputFileCard {
 						JOptionPane.ERROR_MESSAGE);
 
 			}
+		}
+	}
+	class exportreaderresult implements ActionListener{
+		public void actionPerformed(ActionEvent e) {
+    		String head =  "inputFile,date,iMRMCversion,NR,N0,N1,modalityA,modalityB,AUCA,varAUCA,AUCB,varAUCB,AUCAminusAUCB,varAUCAminusAUCB,"
+    				+"pValueNormal,botCInormal,topCInormal,rejectNormal,dfBDG,pValueBDG,botCIBDG,topCIBDG,rejectBDG,dfHills,pValueHillis,botCIHillis,topCIHillis,rejectHillis";
+			String report = head +"\r\n";
+            DateFormat dateForm = new SimpleDateFormat("yyyyMMddHHmm");
+			Date currDate = new Date();
+			final String fileTime = dateForm.format(currDate);
+			String FileName=InputFile1.filename;
+			FileName= FileName.substring(0,FileName.lastIndexOf("."));
+			String sizeFilenamewithpath = FileName+"MRMCStatReaders"+fileTime+".csv";
+			String sizeFilename = sizeFilenamewithpath.substring(sizeFilenamewithpath.lastIndexOf("\\")+1);	
+			try {
+				JFileChooser fc = new JFileChooser();
+				FileNameExtensionFilter filter = new FileNameExtensionFilter(
+						"iMRMC Summary Files (.csv)", "csv");
+				fc.setFileFilter(filter);
+				if (GUInterface.outputfileDirectory!=null){
+					 fc.setSelectedFile(new File(GUInterface.outputfileDirectory+"\\"+sizeFilename));						
+				}						
+				else					
+				    fc.setSelectedFile(new File(sizeFilenamewithpath));
+				int fcReturn = fc.showSaveDialog((Component) e.getSource());
+				if (fcReturn == JFileChooser.APPROVE_OPTION) {
+					File f = fc.getSelectedFile();
+					if (!f.exists()) {
+						f.createNewFile();
+					}
+					String savedFileName = f.getPath();
+					
+					report = exportToFile.exportReaders(report, DBRecordStat,InputFile1, fileTime);		
+					
+					FileWriter fw = new FileWriter(f.getAbsoluteFile());
+					BufferedWriter bw = new BufferedWriter(fw);
+					bw.write(report);
+					bw.close();
+					GUInterface.outputfileDirectory = fc.getCurrentDirectory();
+				    String savedfilename = fc.getSelectedFile().getName();
+				    JFrame frame = new JFrame();
+					JOptionPane.showMessageDialog(
+							frame,"The size result has been succeed export to "+GUInterface.outputfileDirectory+ " !\n"+ "Filename = " +savedfilename, 
+							"Exported", JOptionPane.INFORMATION_MESSAGE);
+				}
+			} catch (HeadlessException e1) {
+				e1.printStackTrace();
+			} catch (IOException e1) {
+				e1.printStackTrace();
+			} 
+
 		}
 	}
 }
